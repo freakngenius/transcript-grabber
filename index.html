@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IG Transcript</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23141214'/%3E%3Crect x='6' y='9' width='20' height='14' fill='%23ECBF42'/%3E%3Cpath d='M10 13h12M10 16h12M10 19h7' stroke='%23141214' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Work+Sans:ital,wght@0,300..700;1,400&display=swap">
+<style>
+  /* Kesterson Collage tokens, copied from the design system's Claude Design export (2026-09-03).
+     Paper collage: ink and paper, torn band edges, hard offset shadows, no rounded corners. */
+  :root {
+    color-scheme: light;
+    --k-ink: #141214;
+    --k-hairline: #2A262A;
+    --k-paper: #F7F3EA;
+    --k-yellow: #ECBF42;
+    --k-accent: #B7422D;
+    --k-text: #F7F3EA;
+    --k-text-secondary: #C9C4C9;
+    --k-text-muted: #B4AFB4;
+    --k-text-paper: #141214;
+    --k-text-paper-soft: #3A352B;
+    --k-text-paper-faint: #5F5A52;
+    --k-text-yellow: #2A2208;
+    --k-text-yellow-meta: #4A3A10;
+    --k-display: "Bricolage Grotesque", "Work Sans", system-ui, sans-serif;
+    --k-body: "Work Sans", system-ui, sans-serif;
+    --k-border: 2px solid var(--k-ink);
+    --k-shadow-card: 8px 8px 0 var(--k-ink);
+    --k-shadow-card-accent: 8px 8px 0 var(--k-accent);
+    --k-shadow-button: 4px 4px 0 var(--k-accent);
+    --k-ease-overshoot: cubic-bezier(.34, 1.5, .5, 1);
+    --gutter: clamp(22px, 5vw, 80px);
+  }
+  * { box-sizing: border-box; }
+  html, body { background: var(--k-paper); }
+  body {
+    margin: 0;
+    font-family: var(--k-body);
+    font-size: 18px;
+    line-height: 1.6;
+    color: var(--k-text-paper);
+    -webkit-font-smoothing: antialiased;
+  }
+  .frame { max-width: 1100px; margin: 0 auto; padding-inline: var(--gutter); }
+  [hidden] { display: none !important; }
+
+  /* ---------- ink band ---------- */
+  .band-ink { position: relative; background: var(--k-ink); color: var(--k-text); padding: 36px 0 84px; }
+  .band-ink::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: .1;
+    background-image: radial-gradient(rgba(247, 243, 234, .9) 1px, transparent 1.1px);
+    background-size: 7px 7px;
+  }
+  .band-ink > .frame { position: relative; }
+  html.native .band-ink { padding-top: 8px; }
+  .brand { margin: 0 0 48px; }
+  .wordmark { font-family: var(--k-display); font-size: 20px; font-weight: 700; letter-spacing: -.02em; color: var(--k-paper); margin: 0; }
+  .byline { font-size: 13px; line-height: 1.5; color: var(--k-text-muted); margin: 4px 0 0; }
+  .byline a { color: var(--k-paper); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .byline a:hover { color: var(--k-yellow); }
+  .byline a:focus-visible { outline: 2px solid var(--k-yellow); outline-offset: 2px; }
+  .eyebrow { font-family: var(--k-body); font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; margin: 0; }
+  .band-ink .eyebrow { color: var(--k-yellow); }
+  .band-paper .eyebrow { color: var(--k-accent); }
+  h1 {
+    font-family: var(--k-display);
+    font-weight: 700;
+    font-size: clamp(38px, 3.6vw, 64px);
+    line-height: 1;
+    letter-spacing: -.03em;
+    color: var(--k-paper);
+    margin: 14px 0 16px;
+    max-width: 26ch;
+  }
+  .lead { font-size: 19px; line-height: 1.5; color: var(--k-text-secondary); max-width: 58ch; margin: 0 0 32px; }
+  form { display: flex; gap: 14px; max-width: 860px; }
+  input[type="url"] {
+    flex: 1;
+    min-width: 0;
+    font: 400 18px/1.3 var(--k-body);
+    color: var(--k-ink);
+    background: var(--k-paper);
+    border: 2px solid var(--k-paper);
+    border-radius: 0;
+    padding: 14px 16px;
+    outline: none;
+    transition: box-shadow .3s ease-out;
+  }
+  input[type="url"]::placeholder { color: var(--k-text-paper-faint); }
+  input[type="url"]:focus { box-shadow: 4px 4px 0 var(--k-yellow); }
+  .hint { font-size: 13px; line-height: 1.5; color: var(--k-text-muted); margin: 16px 0 0; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    font: 700 11px/1 var(--k-body);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    border-radius: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    padding: 15px 26px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: box-shadow .3s ease-out, transform .06s ease-out;
+  }
+  .btn-solid { color: var(--k-ink); background: var(--k-yellow); border: 0; box-shadow: var(--k-shadow-button); }
+  .btn-solid:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--k-accent); }
+  .btn-solid:active { transform: translate(2px, 2px) scale(.985); box-shadow: 2px 2px 0 var(--k-accent); }
+  .btn-outline { color: var(--k-ink); background: transparent; border: 2px solid var(--k-ink); padding: 13px 24px; }
+  .btn-outline:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--k-ink); }
+  .btn-outline:active { transform: translate(1px, 1px) scale(.985); box-shadow: 1px 1px 0 var(--k-ink); }
+  .btn-tall { min-height: 52px; }
+  .btn-compact { min-height: 40px; padding: 10px 18px; }
+  .btn-outline.btn-compact { padding: 8px 16px; }
+  .btn:disabled { opacity: .5; cursor: default; transform: none; }
+  .btn:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 3px; }
+  .band-ink .btn:focus-visible { outline-color: var(--k-yellow); }
+
+  /* ---------- paper band ---------- */
+  .band-paper { position: relative; background: var(--k-paper); padding: 72px 0 56px; }
+  /* Torn edge: filled with the outgoing band's ink, so the header reads as ripped away. */
+  .tear { position: absolute; top: -1px; left: 0; width: 100%; height: 38px; display: block; pointer-events: none; }
+
+  .status { display: grid; gap: 14px; max-width: 860px; margin-bottom: 48px; }
+  .status-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 12px; margin: 0; }
+  #status-text { font: 600 22px/1.2 var(--k-display); letter-spacing: -.02em; color: var(--k-ink); }
+  .elapsed { font-size: 13px; color: var(--k-text-paper-faint); font-variant-numeric: tabular-nums; }
+  .progress { position: relative; height: 16px; border: var(--k-border); background: var(--k-paper); overflow: hidden; }
+  .progress span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 30%;
+    background: var(--k-yellow);
+    border-inline: 2px solid var(--k-ink);
+    animation: slide 1.3s cubic-bezier(.45, 0, .55, 1) infinite alternate;
+  }
+  @keyframes slide { from { transform: translateX(-2px); } to { transform: translateX(234%); } }
+
+  .callout {
+    background: var(--k-paper);
+    border: var(--k-border);
+    box-shadow: var(--k-shadow-card-accent);
+    transform: rotate(-1deg);
+    padding: 24px 28px;
+    max-width: 640px;
+    margin: 4px 0 56px;
+  }
+  .callout p { margin: 8px 0 0; font-size: 17px; line-height: 1.55; color: var(--k-text-paper-soft); }
+
+  .result { margin-bottom: 64px; }
+  .chip {
+    position: relative;
+    z-index: 2;
+    display: inline-block;
+    max-width: calc(100% - 36px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font: 600 14px/1.2 var(--k-display);
+    color: var(--k-text-yellow);
+    background: var(--k-yellow);
+    border: var(--k-border);
+    box-shadow: var(--k-shadow-button);
+    padding: 7px 12px;
+    margin: 0 0 -14px 18px;
+    transform: rotate(-1.2deg);
+  }
+  .sheet { background: #fff; border: var(--k-border); box-shadow: var(--k-shadow-card); }
+  .sheet-head { display: grid; gap: 8px; padding: 32px 28px 18px; }
+  .sheet-title { font: 700 26px/1.05 var(--k-display); letter-spacing: -.02em; color: var(--k-ink); margin: 0; overflow-wrap: anywhere; }
+  .sheet-meta { font-size: 13px; color: var(--k-text-paper-faint); margin: 0; }
+  .notice { background: var(--k-yellow); color: var(--k-text-yellow); border: var(--k-border); font-size: 15px; line-height: 1.5; padding: 10px 14px; margin: 6px 0 0; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 28px 22px; }
+  .toolbar .spacer { flex: 1; }
+  .check { display: inline-flex; align-items: center; gap: 10px; font-size: 15px; color: var(--k-text-paper-soft); cursor: pointer; user-select: none; }
+  .check input {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border: var(--k-border);
+    border-radius: 0;
+    background: var(--k-paper);
+    cursor: pointer;
+  }
+  .check input:checked { background: var(--k-ink); box-shadow: inset 0 0 0 3px var(--k-paper); }
+  .check input:focus-visible { outline: 2px solid var(--k-accent); outline-offset: 2px; }
+  .sheet-text { border-top: var(--k-border); padding: 26px 28px 32px; }
+  #text { max-width: 70ch; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 18px; line-height: 1.6; color: var(--k-text-paper); }
+
+  /* Receipts: three numbers, on ink, cells split by a 2px gap rather than borders. */
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; background: var(--k-hairline); border: 1px solid var(--k-hairline); margin-top: 36px; }
+  .stat { display: grid; align-content: start; gap: 10px; background: var(--k-ink); padding: 24px 26px; }
+  .stat b { font: 700 38px/1 var(--k-display); letter-spacing: -.03em; color: var(--k-yellow); }
+  .stat span { font-size: 15px; line-height: 1.5; color: var(--k-text-secondary); }
+
+  .how h2 { font: 600 clamp(32px, 2.8vw, 46px)/1.02 var(--k-display); letter-spacing: -.025em; color: var(--k-ink); margin: 0 0 32px; }
+  .principles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; }
+  .principle {
+    display: grid;
+    align-content: start;
+    gap: 12px;
+    background: var(--k-paper);
+    border: var(--k-border);
+    padding: 30px;
+    box-shadow: var(--k-shadow-card);
+    transition: box-shadow .3s ease-out;
+  }
+  .principle:nth-child(1) { transform: rotate(-1.2deg); }
+  .principle:nth-child(2) { transform: rotate(.9deg); background: var(--k-yellow); box-shadow: var(--k-shadow-card-accent); }
+  .principle:nth-child(3) { transform: rotate(-.6deg); }
+  .principle .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .principle .num { font: 700 38px/1 var(--k-display); color: var(--k-accent); }
+  .principle .aside { font-size: 13px; color: var(--k-text-paper-faint); text-align: right; }
+  .principle:nth-child(2) .aside { color: var(--k-text-yellow-meta); }
+  .principle h3 { font: 700 26px/1.05 var(--k-display); letter-spacing: -.02em; color: var(--k-ink); margin: 0; }
+  .principle p { font-size: 17px; line-height: 1.55; color: var(--k-text-paper-soft); margin: 0; }
+  .principle:nth-child(2) p { color: var(--k-text-yellow); }
+
+  footer { margin-top: 72px; font-size: 13px; color: var(--k-text-paper-faint); }
+
+  /* Scroll-style reveal for a fresh result; the chip overshoots as it settles. */
+  .reveal .sheet, .reveal .stats { animation: rise .76s ease-out both; }
+  .reveal .stats { animation-delay: .11s; }
+  .reveal .chip { animation: pin .76s var(--k-ease-overshoot) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: none; } }
+  @keyframes pin { from { opacity: 0; transform: rotate(-7deg) translateY(-14px); } to { opacity: 1; transform: rotate(-1.2deg); } }
+
+  @media (hover: none) {
+    .principle:active { transform: translateY(2px) scale(.985); box-shadow: 2px 2px 0 var(--k-ink); }
+  }
+  @media (max-width: 760px) {
+    .principles, .stats { grid-template-columns: 1fr; }
+    .brand { margin-bottom: 36px; }
+  }
+  @media (max-width: 560px) {
+    form { flex-direction: column; }
+    .toolbar .spacer { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .progress span { width: 100%; transform: none; }
+  }
+</style>
+</head>
+<body>
+<header class="band-ink">
+  <div class="frame">
+    <div class="brand">
+      <p class="wordmark">IG Transcript</p>
+      <!-- The emoji breaks the design system's no-emoji rule on purpose: Kyle asked for it. -->
+      <p class="byline">Made with ❤️ by <a href="https://www.demystified.ai" target="_blank" rel="noopener">Kyle Kesterson</a></p>
+    </div>
+    <p class="eyebrow">Reel to text</p>
+    <h1>What did they actually say?</h1>
+    <p class="lead">Paste an Instagram link and get what was said as text. A one-minute reel takes about 5 seconds.</p>
+    <form id="form">
+      <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
+             placeholder="https://www.instagram.com/reel/…" aria-label="Video link" autofocus>
+      <button id="go" class="btn btn-solid btn-tall" type="submit">Get transcript</button>
+    </form>
+    <p class="hint">Paste or drop a link and it starts on its own · TikTok, YouTube and X links work too</p>
+  </div>
+</header>
+
+<main class="band-paper">
+  <svg class="tear" viewBox="0 0 1200 40" preserveAspectRatio="none" aria-hidden="true">
+    <path fill="#141214" d="M0,0 H1200 V21.0 L1160,24.4 L1120,32.0 L1080,21.3 L1040,13.3 L1000,30.4 L960,25.9 L920,25.4 L880,19.6 L840,25.5 L800,29.4 L760,12.5 L720,10.9 L680,16.3 L640,21.8 L600,17.2 L560,20.9 L520,16.3 L480,12.9 L440,12.0 L400,31.0 L360,11.1 L320,24.4 L280,12.7 L240,24.5 L200,27.0 L160,18.1 L120,22.0 L80,10.6 L40,16.1 L0,16.3 Z"/>
+  </svg>
+  <div class="frame">
+    <div id="status" class="status" role="status" aria-live="polite" hidden>
+      <p class="status-line"><span id="status-text"></span><span id="elapsed" class="elapsed"></span></p>
+      <div class="progress" aria-hidden="true"><span></span></div>
+    </div>
+
+    <div id="error" class="callout" role="alert" hidden>
+      <p class="eyebrow">Couldn't transcribe that</p>
+      <p id="error-text"></p>
+    </div>
+
+    <section id="result" class="result" hidden>
+      <span id="chip" class="chip"></span>
+      <article class="sheet">
+        <div class="sheet-head">
+          <h2 id="r-title" class="sheet-title"></h2>
+          <p id="r-meta" class="sheet-meta"></p>
+          <p id="notice" class="notice" hidden></p>
+        </div>
+        <div class="toolbar">
+          <label class="check"><input type="checkbox" id="timestamps"> Timestamps</label>
+          <span class="spacer"></span>
+          <button id="copy" class="btn btn-outline btn-compact" type="button">Copy text</button>
+          <button id="download" class="btn btn-solid btn-compact" type="button">Download .txt</button>
+        </div>
+        <div class="sheet-text"><div id="text"></div></div>
+      </article>
+      <div class="stats">
+        <div class="stat"><b id="s-words"></b><span>Words in this transcript.</span></div>
+        <div class="stat"><b id="s-length"></b><span>Of audio fetched. The video never downloaded.</span></div>
+        <div class="stat"><b id="s-took"></b><span>From paste to text, on this Mac.</span></div>
+      </div>
+    </section>
+
+    <section class="how">
+      <h2>how it works</h2>
+      <div class="principles">
+        <div class="principle" data-tilt="-1.2">
+          <div class="top"><span class="num">01</span><span class="aside">yt-dlp</span></div>
+          <h3>Sound only</h3>
+          <p>Only the audio track comes down, about 1 MB for a minute of reel. The video never does.</p>
+        </div>
+        <div class="principle" data-tilt="0.9" data-shadow="accent">
+          <div class="top"><span class="num">02</span><span class="aside">whisper.cpp</span></div>
+          <h3>Transcribed here</h3>
+          <p>Whisper large-v3-turbo runs on this Mac's GPU. Nothing goes to a transcription service.</p>
+        </div>
+        <div class="principle" data-tilt="-0.6">
+          <div class="top"><span class="num">03</span><span class="aside">temp folder</span></div>
+          <h3>Nothing kept</h3>
+          <p>The audio is deleted when each job ends. The text stays only if you save it.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer>Runs on this Mac · the audio is deleted after each transcript · no account, no upload</footer>
+  </div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const urlBox = $('url');
+  let current = null;
+  let busy = false;
+  let clock = null;
+  let began = 0;
+
+  // Inside the Mac app, saving and copying go through native handlers.
+  const bridge = window.webkit?.messageHandlers;
+  const native = Boolean(bridge?.save);
+  if (native) {
+    document.documentElement.classList.add('native');
+    $('download').textContent = 'Save .txt…';
+  }
+  window.igSaved = (ok) => flash($('download'), ok ? 'Saved' : 'Could not save');
+
+  // The server does the real parsing; this only decides whether a paste is a link.
+  function pickUrl(text) {
+    const match = (text || '').match(/https?:\/\/[^\s<>"']+/) || (text || '').match(/(?:www\.)?instagram\.com\/[^\s<>"']+/);
+    if (!match) return null;
+    let url = match[0].replace(/[.,;)\]]+$/, '');
+    if (!/^https?:/.test(url)) url = `https://${url}`;
+    // Same rule as the server: drop Instagram's igsh share tag.
+    return /^https?:\/\/(?:[\w-]+\.)*instagram\.com\//i.test(url) ? url.replace(/[?#].*$/, '') : url;
+  }
+
+  // Same format as fmt_duration() in app.py: 54s, 5m23s.
+  function fmtSeconds(total) {
+    const s = Math.max(0, Math.round(total));
+    return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m${String(s % 60).padStart(2, '0')}s`;
+  }
+
+  function showError(message) {
+    $('error-text').textContent = message;
+    $('error').hidden = false;
+  }
+
+  async function start(raw) {
+    if (busy) return;
+    const url = pickUrl(raw);
+    if (!url) {
+      showError('Paste a link that starts with https://');
+      return;
+    }
+    urlBox.value = url;
+    busy = true;
+    $('go').disabled = true;
+    $('error').hidden = true;
+    $('result').hidden = true;
+    $('status-text').textContent = 'Starting…';
+    $('elapsed').textContent = '';
+    $('status').hidden = false;
+    began = Date.now();
+    clock = setInterval(() => { $('elapsed').textContent = fmtSeconds((Date.now() - began) / 1000); }, 1000);
+
+    let finished = false;
+    try {
+      const res = await fetch('/api/transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let cut;
+        while ((cut = buffer.indexOf('\n')) >= 0) {
+          const line = buffer.slice(0, cut).trim();
+          buffer = buffer.slice(cut + 1);
+          if (line) finished = handle(JSON.parse(line)) || finished;
+        }
+      }
+      if (!finished) showError('The app stopped before it finished. See the log for details.');
+    } catch (err) {
+      showError(`Could not reach the app. Is it still running? (${err.message})`);
+    } finally {
+      busy = false;
+      clearInterval(clock);
+      $('go').disabled = false;
+      $('status').hidden = true;
+      urlBox.focus();
+      urlBox.select();
+    }
+  }
+
+  function handle(event) {
+    if (event.stage === 'done') {
+      showResult(event);
+      return true;
+    }
+    if (event.stage === 'error') {
+      showError(event.message);
+      return true;
+    }
+    if (event.message) $('status-text').textContent = event.message;
+    return false;
+  }
+
+  function showResult(result) {
+    current = result;
+    const host = (() => { try { return new URL(result.url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
+    $('chip').textContent = result.creator || host || 'Transcript';
+    $('r-title').textContent = result.title || result.creator || 'Transcript';
+    $('r-meta').textContent = [result.language, host].filter(Boolean).join(' · ');
+    $('notice').textContent = result.notice || '';
+    $('notice').hidden = !result.notice;
+    $('s-words').textContent = String(result.words);
+    $('s-length').textContent = result.duration_label;
+    $('s-took').textContent = fmtSeconds((Date.now() - began) / 1000);
+    render();
+    const box = $('result');
+    box.classList.remove('reveal');
+    box.hidden = false;
+    void box.offsetWidth;  // restart the reveal animation
+    box.classList.add('reveal');
+  }
+
+  const shownText = () => ($('timestamps').checked ? current.timed : current.plain);
+
+  function render() {
+    if (current) $('text').textContent = shownText();
+  }
+
+  function flash(button, label) {
+    button.dataset.label ??= button.textContent;
+    button.textContent = label;
+    setTimeout(() => { button.textContent = button.dataset.label; }, 1400);
+  }
+
+  $('form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    start(urlBox.value);
+  });
+
+  urlBox.addEventListener('paste', (event) => {
+    const url = pickUrl(event.clipboardData.getData('text'));
+    if (!url) return;
+    event.preventDefault();
+    start(url);
+  });
+
+  // A paste anywhere on the page counts, not only in the box.
+  document.addEventListener('paste', (event) => {
+    if (event.target === urlBox) return;
+    const url = pickUrl(event.clipboardData.getData('text'));
+    if (!url) return;
+    event.preventDefault();
+    start(url);
+  });
+
+  // Dropping a link on the page works like pasting it.
+  document.addEventListener('dragover', (event) => event.preventDefault());
+  document.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const url = pickUrl(event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain'));
+    if (url) start(url);
+  });
+
+  $('copy').addEventListener('click', async () => {
+    if (native) {
+      bridge.copy.postMessage(shownText());
+      flash($('copy'), 'Copied');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(shownText());
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents($('text'));
+      const selection = getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      document.execCommand('copy');
+      selection.removeAllRanges();
+    }
+    flash($('copy'), 'Copied');
+  });
+
+  $('download').addEventListener('click', () => {
+    const text = `${current.header}\n\n${shownText()}\n`;
+    if (native) {
+      bridge.save.postMessage({ filename: current.filename, text });
+      return;
+    }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = current.filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+  });
+
+  try { $('timestamps').checked = localStorage.getItem('timestamps') === '1'; } catch {}
+  $('timestamps').addEventListener('change', () => {
+    try { localStorage.setItem('timestamps', $('timestamps').checked ? '1' : '0'); } catch {}
+    render();
+  });
+
+  // The system's signature hover: a cursor-tracked tilt, a 6px lift and a shadow
+  // that grows by 6px. Touch gets a press in CSS instead; reduced motion gets neither.
+  const canTilt = matchMedia('(hover: hover) and (pointer: fine)').matches
+    && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (canTilt) {
+    for (const card of document.querySelectorAll('[data-tilt]')) {
+      const tilt = parseFloat(card.dataset.tilt) || 0;
+      const shadow = card.dataset.shadow === 'accent' ? 'var(--k-accent)' : 'var(--k-ink)';
+      card.addEventListener('mouseenter', () => { card.style.boxShadow = `14px 14px 0 ${shadow}`; });
+      card.addEventListener('mousemove', (event) => {
+        const box = card.getBoundingClientRect();
+        const x = ((event.clientX - box.left) / box.width - 0.5) * 8;
+        const y = ((event.clientY - box.top) / box.height - 0.5) * 8;
+        card.style.transform = `rotate(${tilt}deg) perspective(900px) rotateY(${x.toFixed(2)}deg) rotateX(${(-y).toFixed(2)}deg) translateY(-6px)`;
+      });
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = '';
+        card.style.boxShadow = '';
+      });
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ig-transcript",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--quiet",
+        "app.py",
+        "--no-open"
+      ],
+      "port": 3232
+    },
+    {
+      "name": "ig-transcript-dev",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run",
+        "--quiet",
+        "app.py",
+        "--no-open",
+        "--port",
+        "3233"
+      ],
+      "port": 3233
+    }
+  ]
+}
