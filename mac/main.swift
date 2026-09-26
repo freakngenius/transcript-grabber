@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var offline = false
     private var quitting = false
     private var startedAt = Date()
+    private var collector: ReelCollector?
+    private var loginWindow: InstagramLoginWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -222,7 +224,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     private func buildWindow() {
         let config = WKWebViewConfiguration()
-        for name in ["app", "save", "copy"] {
+        for name in ["app", "save", "copy", "profile", "reveal"] {
             config.userContentController.add(self, name: name)
         }
         webView = WKWebView(frame: .zero, configuration: config)
@@ -277,6 +279,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         view.addItem(withTitle: "Reload", action: #selector(reloadPage), keyEquivalent: "r").target = self
         view.addItem(withTitle: "Open in Browser", action: #selector(openInBrowser), keyEquivalent: "").target = self
         view.addItem(withTitle: "Show Log", action: #selector(showLog), keyEquivalent: "").target = self
+        view.addItem(.separator())
+        view.addItem(withTitle: "Instagram Login…", action: #selector(showInstagramLogin), keyEquivalent: "").target = self
         addSubmenu(view, to: bar)
 
         let windowMenu = NSMenu(title: "Window")
@@ -363,9 +367,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
             guard let text = message.body as? String else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        case "profile":
+            guard let body = message.body as? [String: Any] else { return }
+            if body["cancel"] as? Bool == true {
+                collector?.cancel()
+                return
+            }
+            let count = min(max((body["count"] as? NSNumber)?.intValue ?? 12, 1), 100)
+            findReels(username: body["username"] as? String ?? "", count: count)
+        case "reveal":
+            guard let path = message.body as? String else { return }
+            let url = URL(fileURLWithPath: path)
+            // Only folders inside the user's home, which is where the server saves.
+            guard url.standardizedFileURL.path.hasPrefix(FileManager.default.homeDirectoryForCurrentUser.path + "/") else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
         default:
             break
         }
+    }
+
+    // MARK: - Profiles
+
+    private func findReels(username: String, count: Int) {
+        guard collector == nil else { return }
+        guard username.range(of: "^[A-Za-z0-9._]{1,30}$", options: .regularExpression) != nil else {
+            sendToPage("igProfileLinks", ["username": username, "links": [String](), "note": "That is not an Instagram username."])
+            return
+        }
+        let collector = ReelCollector(username: username, count: count, beside: window)
+        self.collector = collector
+        Task {
+            let outcome = await collector.run()
+            self.collector = nil
+            var payload: [String: Any] = ["username": username, "links": outcome.links]
+            if let note = outcome.note { payload["note"] = note }
+            self.sendToPage("igProfileLinks", payload)
+            self.window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    private func sendToPage(_ function: String, _ payload: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.\(function) && \(function)(\(json))", completionHandler: nil)
+    }
+
+    @objc private func showInstagramLogin() {
+        if let existing = loginWindow, existing.window.isVisible {
+            existing.window.makeKeyAndOrderFront(nil)
+            return
+        }
+        loginWindow = InstagramLoginWindow()
     }
 
     // A save panel instead of a silent write: the user picks the place, and macOS

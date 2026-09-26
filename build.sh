@@ -13,7 +13,7 @@ BUNDLE="$WORK/$APP.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"
 
 echo "Compiling…"
-swiftc -O -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 mac/main.swift -o "$BUNDLE/Contents/MacOS/$APP"
+swiftc -O -swift-version 5 -parse-as-library -target arm64-apple-macos13.0 mac/main.swift mac/ReelCollector.swift -o "$BUNDLE/Contents/MacOS/$APP"
 
 echo "Drawing the icon…"
 swift mac/make_icon.swift "$WORK/icon.png"

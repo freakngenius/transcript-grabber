@@ -37,6 +37,22 @@ The saved file starts with a short header (title or caption, creator, link, leng
 
 The View menu has **Open in Browser** (the same app in your browser) and **Show Log** (for when something fails). Quitting the app (Command-Q or closing the window) stops everything.
 
+## Grab a whole profile (Mac app)
+
+Paste an Instagram profile link, like `https://www.instagram.com/nasa/`, choose how many of the latest videos to grab (1 to 100), and click **Grab transcripts**.
+
+1. A small window opens on the account's Reels tab and scrolls until it has that many links.
+2. Each video is transcribed and saved as its own .txt file in `Downloads/Transcript Grabber/<account>/`, named by date and caption, like `2026-09-13 Today's flyover in Pittsburgh [DdPsDCWRT-u].txt`.
+3. `<account> - all transcripts.txt` in the same folder holds every transcript in date order, ready to paste into a chat model.
+
+Run it again later to pick up new videos: ones already saved are skipped. **Stop** ends a run early, and everything saved so far stays.
+
+- Without a login, Instagram shows a few dozen reels before it asks you to log in. For more, use View > Instagram Login once; the app remembers it. The login is only used to scroll the Reels tab. The videos themselves are fetched without it.
+- Videos are fetched 3 to 6 seconds apart, and a run stops if Instagram starts refusing. Grabbing hundreds of videos in a row can still get an account rate-limited, so keep runs modest.
+- macOS asks once for permission to save in Downloads. Click Allow.
+
+Without the app, you can paste several post links at once instead. They are transcribed and saved the same way.
+
 ## How it works
 
 1. The app starts a small local server (`app.py`) with uv and shows its page in a window. The server only answers your own Mac.
@@ -91,6 +107,7 @@ python3 -B -m unittest -v
 
 - Videos with no speech (music only) return a notice instead of a transcript.
 - Photos and silent videos have nothing to transcribe.
+- Profile grabbing works for public accounts only.
 - Not affiliated with Instagram, Meta, YouTube or Google. Their terms limit automated downloading; this is built for personal, occasional use. Only transcribe videos you have the right to use.
 
 ## License

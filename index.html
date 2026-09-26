@@ -15,6 +15,8 @@
     color-scheme: light;
     --k-ink: #141214;
     --k-hairline: #2A262A;
+    --k-ink-raised: #1E1B1E;
+    --k-rule-paper: rgba(20, 18, 20, .22);
     --k-paper: #F7F3EA;
     --k-yellow: #ECBF42;
     --k-accent: #B7422D;
@@ -150,6 +152,8 @@
     animation: slide 1.3s cubic-bezier(.45, 0, .55, 1) infinite alternate;
   }
   @keyframes slide { from { transform: translateX(-2px); } to { transform: translateX(234%); } }
+  .progress.determinate span { animation: none; border-left: 0; width: var(--done, 0%); transform: none; transition: width .3s ease-out; }
+  .status-line .spacer { flex: 1; }
 
   .callout {
     background: var(--k-paper);
@@ -233,6 +237,33 @@
   .principle p { font-size: 17px; line-height: 1.55; color: var(--k-text-paper-soft); margin: 0; }
   .principle:nth-child(2) p { color: var(--k-text-yellow); }
 
+  /* Profile panel: grab the latest N videos from an Instagram account. */
+  .profile { max-width: 860px; margin-top: 24px; padding: 22px 24px; background: var(--k-ink-raised); border: 2px solid var(--k-yellow); box-shadow: 6px 6px 0 var(--k-accent); }
+  .profile-title { font: 700 22px/1.15 var(--k-display); letter-spacing: -.02em; color: var(--k-paper); margin: 0 0 14px; }
+  .profile-title span { color: var(--k-yellow); }
+  .profile-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
+  .count { display: inline-flex; align-items: center; gap: 10px; font-size: 16px; color: var(--k-text-secondary); }
+  .count input { width: 84px; font: 600 18px var(--k-body); color: var(--k-ink); background: var(--k-paper); border: 2px solid var(--k-paper); border-radius: 0; padding: 8px 10px; outline: none; }
+  .count input:focus { box-shadow: 4px 4px 0 var(--k-yellow); }
+  .profile .hint { margin-top: 14px; }
+
+  /* Batch: one row per video, with its state. */
+  .batch { margin-bottom: 64px; }
+  .batch-list { list-style: none; margin: 0; padding: 0; border-top: var(--k-border); }
+  .batch-list li { display: grid; grid-template-columns: 40px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 12px 28px; border-bottom: 1px solid var(--k-rule-paper); }
+  .batch-list .num { font: 700 20px/1 var(--k-display); color: var(--k-accent); }
+  .batch-list .what { display: grid; gap: 2px; min-width: 0; }
+  .batch-list b, .batch-list small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .batch-list b { font-size: 16px; font-weight: 600; }
+  .batch-list small { font-size: 13px; color: var(--k-text-paper-faint); }
+  .pill { font: 600 12px/1.2 var(--k-display); padding: 3px 8px; border: 1px solid var(--k-ink); white-space: nowrap; }
+  .pill.saved { background: var(--k-yellow); border-color: var(--k-yellow); color: var(--k-text-yellow); }
+  .pill.working { background: var(--k-ink); color: var(--k-paper); }
+  .pill.failed { color: var(--k-accent); border-color: var(--k-accent); }
+  .pill.waiting, .pill.skipped { color: var(--k-text-paper-faint); border-color: var(--k-rule-paper); }
+  .batch-actions { padding-top: 18px; }
+  .batch-summary { margin: 0; font-size: 15px; line-height: 1.5; color: var(--k-text-paper-soft); max-width: 60ch; }
+
   /* Drop target, shown only while files are dragged over the window. */
   .dropzone {
     position: fixed;
@@ -297,9 +328,17 @@
     </form>
     <div class="alt">
       <button id="pick" class="btn btn-ghost" type="button">Choose a video file</button>
-      <p class="hint">Or drop a .mov, .mp4 or audio file anywhere on this window · links start on their own · TikTok and X work too</p>
+      <p class="hint">Or drop a video file anywhere on this window · paste an Instagram profile to grab many videos · links start on their own</p>
     </div>
     <input id="file" type="file" accept="video/*,audio/*,.mov,.mp4,.m4v,.mkv,.webm,.avi,.mp3,.m4a,.wav,.aac,.flac" hidden>
+    <div id="profile" class="profile" hidden>
+      <p class="profile-title">Grab transcripts from <span id="profile-name"></span></p>
+      <div class="profile-row">
+        <label class="count">Latest <input id="count" type="number" min="1" max="100" value="12" inputmode="numeric"> videos</label>
+        <button id="grab" class="btn btn-solid" type="button">Grab transcripts</button>
+      </div>
+      <p id="profile-hint" class="hint">A small window opens on the account's Reels tab and collects the links. Each video is then transcribed and saved to Downloads › Transcript Grabber, a few seconds apart.</p>
+    </div>
   </div>
 </header>
 
@@ -309,7 +348,7 @@
   </svg>
   <div class="frame">
     <div id="status" class="status" role="status" aria-live="polite" hidden>
-      <p class="status-line"><span id="status-text"></span><span id="elapsed" class="elapsed"></span></p>
+      <p class="status-line"><span id="status-text"></span><span id="elapsed" class="elapsed"></span><span class="spacer"></span><button id="stop" class="btn btn-outline btn-compact" type="button">Stop</button></p>
       <div class="progress" aria-hidden="true"><span></span></div>
     </div>
 
@@ -339,6 +378,22 @@
         <div class="stat"><b id="s-length"></b><span id="s-length-label">Of audio fetched. The video never downloaded.</span></div>
         <div class="stat"><b id="s-took"></b><span>From paste to text, on this Mac.</span></div>
       </div>
+    </section>
+
+    <section id="batch" class="batch" hidden>
+      <article class="sheet">
+        <div class="sheet-head">
+          <h2 id="batch-title" class="sheet-title"></h2>
+          <p id="batch-folder" class="sheet-meta"></p>
+          <p id="batch-note" class="notice" hidden></p>
+        </div>
+        <ol id="batch-list" class="batch-list"></ol>
+        <div class="toolbar batch-actions">
+          <p id="batch-summary" class="batch-summary"></p>
+          <span class="spacer"></span>
+          <button id="reveal" class="btn btn-solid btn-compact" type="button" hidden>Show in Finder</button>
+        </div>
+      </article>
     </section>
 
     <section class="how">
@@ -407,18 +462,55 @@
   const MEDIA = /\.(mov|mp4|m4v|mkv|webm|avi|mp3|m4a|wav|aac|flac|ogg|opus)$/i;
   const MAX_FILE = 10 * 1024 ** 3;  // same limit as MAX_UPLOAD in app.py
 
+  // Instagram profile pages look like instagram.com/nasa/ or instagram.com/nasa/reels/.
+  const RESERVED = new Set(['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts', 'direct', 'about', 'legal', 'developer', 'web', 'share']);
+  function profileOf(url) {
+    try {
+      const u = new URL(url);
+      if (!/(^|\.)instagram\.com$/i.test(u.hostname)) return null;
+      const m = u.pathname.match(/^\/([A-Za-z0-9._]{1,30})\/?(?:reels\/?)?$/);
+      return m && !RESERVED.has(m[1].toLowerCase()) ? m[1] : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function pickUrls(text) {
+    const found = (text || '').match(/https?:\/\/[^\s<>"']+/g) || [];
+    return [...new Set(found.map((u) => pickUrl(u)).filter(Boolean))];
+  }
+
+  // Local time, never UTC: 2026-09-26 1305.
+  function stamp() {
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}${pad(d.getMinutes())}`;
+  }
+
   function startLink(raw) {
     if (busy) return;
+    const many = pickUrls(raw);
+    if (many.length > 1) {
+      startBatch(many, `Batch ${stamp()}`, '');
+      return;
+    }
     const url = pickUrl(raw);
     if (!url) {
       showError('Paste a link that starts with https://');
       return;
     }
     urlBox.value = url;
-    run('Starting…', () => fetch('/api/transcribe', {
+    const handle = profileOf(url);
+    if (handle) {
+      showProfile(handle);
+      return;
+    }
+    hideProfile();
+    run('Starting…', (signal) => fetch('/api/transcribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
+      signal,
     }));
   }
 
@@ -433,29 +525,78 @@
       return;
     }
     urlBox.value = '';
+    hideProfile();
     // The raw file goes to the server on this Mac; it never leaves the machine.
-    run(`Reading ${file.name}…`, () => fetch('/api/transcribe-file', {
+    run(`Reading ${file.name}…`, (signal) => fetch('/api/transcribe-file', {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) },
       body: file,
+      signal,
     }));
   }
 
-  async function run(label, send) {
+  let profileHandle = null;
+  let collecting = false;
+  let controller = null;
+  let batchTotal = 0;
+  let batchFolder = '';
+
+  function showProfile(handle) {
+    profileHandle = handle;
+    $('profile-name').textContent = `@${handle}`;
+    $('error').hidden = true;
+    $('profile').hidden = false;
+    if (!bridge?.profile) {
+      $('grab').disabled = true;
+      $('profile-hint').textContent = 'Grabbing a whole profile needs the Mac app, which lists the reels in its own browser window. Here you can paste several post links at once instead.';
+    }
+    $('count').focus();
+    $('count').select();
+  }
+
+  function hideProfile() {
+    profileHandle = null;
+    $('profile').hidden = true;
+  }
+
+  function setProgress(fraction) {
+    const bar = document.querySelector('.progress');
+    bar.classList.toggle('determinate', fraction !== null);
+    bar.style.setProperty('--done', fraction === null ? '0%' : `${Math.round(fraction * 100)}%`);
+  }
+
+  function beginBusy(label) {
     busy = true;
     $('go').disabled = true;
     $('pick').disabled = true;
+    $('grab').disabled = true;
     $('error').hidden = true;
     $('result').hidden = true;
     $('status-text').textContent = label;
     $('elapsed').textContent = '';
     $('status').hidden = false;
+    setProgress(null);
     began = Date.now();
     clock = setInterval(() => { $('elapsed').textContent = fmtSeconds((Date.now() - began) / 1000); }, 1000);
+  }
 
+  function endBusy() {
+    busy = false;
+    controller = null;
+    clearInterval(clock);
+    $('go').disabled = false;
+    $('pick').disabled = false;
+    $('grab').disabled = !bridge?.profile;
+    $('status').hidden = true;
+  }
+
+  // Streams NDJSON events from the server into onEvent until it reports it is finished.
+  async function run(label, send, onEvent = handle) {
+    beginBusy(label);
+    controller = new AbortController();
     let finished = false;
     try {
-      const res = await send();
+      const res = await send(controller.signal);
       if (!res.ok || !res.body) {
         showError((await res.text()).trim() || `The app answered with error ${res.status}.`);
         return;
@@ -471,22 +612,118 @@
         while ((cut = buffer.indexOf('\n')) >= 0) {
           const line = buffer.slice(0, cut).trim();
           buffer = buffer.slice(cut + 1);
-          if (line) finished = handle(JSON.parse(line)) || finished;
+          if (line) finished = onEvent(JSON.parse(line)) || finished;
         }
       }
       if (!finished) showError('The app stopped before it finished. See the log for details.');
     } catch (err) {
-      showError(`Could not reach the app. Is it still running? (${err.message})`);
+      if (err.name === 'AbortError') {
+        if (!$('batch').hidden) $('batch-summary').textContent = 'Stopped. Transcripts saved so far stay in the folder.';
+      } else {
+        showError(`Could not reach the app. Is it still running? (${err.message})`);
+      }
     } finally {
-      busy = false;
-      clearInterval(clock);
-      $('go').disabled = false;
-      $('pick').disabled = false;
-      $('status').hidden = true;
+      endBusy();
       urlBox.focus();
       urlBox.select();
     }
   }
+
+  function batchRow(index, link) {
+    const row = document.createElement('li');
+    row.innerHTML = '<span class="num"></span><span class="what"><b></b><small></small></span><span class="pill waiting">Waiting</span>';
+    row.querySelector('.num').textContent = String(index).padStart(2, '0');
+    row.querySelector('b').textContent = link.replace(/^https?:\/\/(www\.)?/, '');
+    return row;
+  }
+
+  function setRow(row, state, label, detail) {
+    const pill = row.querySelector('.pill');
+    pill.className = `pill ${state}`;
+    pill.textContent = label;
+    if (detail !== undefined) row.querySelector('small').textContent = detail;
+  }
+
+  function prettyPath(path) {
+    const tail = path.split('/Downloads/')[1];
+    return tail ? `Downloads › ${tail.split('/').join(' › ')}` : path;
+  }
+
+  function startBatch(links, label, from, note) {
+    hideProfile();
+    $('batch-list').replaceChildren(...links.map((link, i) => batchRow(i + 1, link)));
+    const noun = links.length === 1 ? 'video' : 'videos';
+    $('batch-title').textContent = `Transcribing ${links.length} ${noun}${from ? ` from ${from}` : ''}`;
+    $('batch-folder').textContent = '';
+    $('batch-note').textContent = note || '';
+    $('batch-note').hidden = !note;
+    $('batch-summary').textContent = '';
+    $('reveal').hidden = true;
+    $('batch').hidden = false;
+    batchTotal = links.length;
+    run(`Starting ${links.length} ${noun}…`, (signal) => fetch('/api/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ links, label }),
+      signal,
+    }), handleBatch);
+  }
+
+  function handleBatch(event) {
+    const row = event.index ? $('batch-list').children[event.index - 1] : null;
+    switch (event.stage) {
+      case 'batch':
+        batchFolder = event.folder;
+        $('batch-folder').textContent = `Saving to ${prettyPath(event.folder)}`;
+        return false;
+      case 'progress':
+        $('status-text').textContent = event.message;
+        setProgress((event.index - 1) / batchTotal);
+        if (row) setRow(row, 'working', 'Working');
+        return false;
+      case 'item':
+        setProgress(event.index / batchTotal);
+        if (!row) return false;
+        if (event.state === 'saved') {
+          row.querySelector('b').textContent = event.title;
+          setRow(row, 'saved', 'Saved', `${event.words} words · ${event.file}`);
+        } else if (event.state === 'skipped') {
+          setRow(row, 'skipped', 'Already saved', event.title);
+        } else {
+          setRow(row, 'failed', 'Failed', event.reason);
+        }
+        return false;
+      case 'batch-done': {
+        const parts = [`Saved ${event.saved}`];
+        if (event.skipped) parts.push(`${event.skipped} already saved`);
+        if (event.failed) parts.push(`${event.failed} failed`);
+        let text = `${parts.join(' · ')}.`;
+        if (event.combined) text += ` Every transcript is also in “${event.combined}”.`;
+        if (event.stopped) text += ` ${event.stopped}`;
+        $('batch-summary').textContent = text;
+        $('batch-title').textContent = $('batch-title').textContent.replace(/^Transcribing/, 'Transcribed');
+        $('reveal').hidden = !bridge?.reveal;
+        return true;
+      }
+      case 'error':
+        showError(event.message);
+        return true;
+      default:
+        if (event.message) $('status-text').textContent = event.message;
+        return false;
+    }
+  }
+
+  // The Mac app calls this once its reels window has collected the links.
+  window.igProfileLinks = (payload) => {
+    collecting = false;
+    endBusy();
+    if (!payload.links || !payload.links.length) {
+      showError(payload.note || `No reels found on @${payload.username}.`);
+      return;
+    }
+    startBatch(payload.links, payload.username, `@${payload.username}`, payload.note);
+  };
 
   function handle(event) {
     if (event.stage === 'done') {
@@ -540,19 +777,19 @@
   });
 
   urlBox.addEventListener('paste', (event) => {
-    const url = pickUrl(event.clipboardData.getData('text'));
-    if (!url) return;
+    const text = event.clipboardData.getData('text');
+    if (!pickUrl(text)) return;
     event.preventDefault();
-    startLink(url);
+    startLink(text);
   });
 
   // A paste anywhere on the page counts, not only in the box.
   document.addEventListener('paste', (event) => {
     if (event.target === urlBox) return;
-    const url = pickUrl(event.clipboardData.getData('text'));
-    if (!url) return;
+    const text = event.clipboardData.getData('text');
+    if (!pickUrl(text)) return;
     event.preventDefault();
-    startLink(url);
+    startLink(text);
   });
 
   // Drop a video or audio file anywhere to transcribe it; a dropped link works like a paste.
@@ -565,8 +802,35 @@
       startFile(file);
       return;
     }
-    const url = pickUrl(event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain'));
-    if (url) startLink(url);
+    const text = event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain');
+    if (pickUrl(text)) startLink(text);
+  });
+
+  $('grab').disabled = !bridge?.profile;
+  $('grab').addEventListener('click', () => {
+    if (busy || !profileHandle || !bridge?.profile) return;
+    const count = Math.min(100, Math.max(1, parseInt($('count').value, 10) || 12));
+    $('count').value = count;
+    collecting = true;
+    beginBusy(`Finding reels on @${profileHandle}… a small window is scrolling the Reels tab`);
+    bridge.profile.postMessage({ username: profileHandle, count });
+  });
+  $('count').addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    $('grab').click();
+  });
+
+  $('stop').addEventListener('click', () => {
+    if (collecting) {
+      bridge.profile.postMessage({ cancel: true });
+      return;
+    }
+    controller?.abort();
+  });
+
+  $('reveal').addEventListener('click', () => {
+    if (batchFolder) bridge?.reveal?.postMessage(batchFolder);
   });
 
   // Show the drop target only while files are dragged over the window.

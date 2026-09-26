@@ -18,12 +18,14 @@ import argparse
 import datetime as dt
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import traceback
 import urllib.request
 import webbrowser
@@ -41,6 +43,9 @@ MODEL_URL = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{MODEL_N
 MODEL_DIR = Path.home() / ".cache" / "transcript-grabber"
 MAX_VIDEOS = 10  # a carousel post can hold several videos
 MAX_UPLOAD = 10 * 1024**3  # 10 GB per dropped file
+MAX_BATCH = 100  # videos per batch
+BATCH_PAUSE = (3.0, 6.0)  # seconds between videos, a person-like pace that avoids rate limits
+SAVE_ROOT = Path(os.environ.get("TRANSCRIPTS_DIR") or Path.home() / "Downloads" / "Transcript Grabber").expanduser()
 MIN_WORDS = 5
 
 LANGUAGES = {
@@ -253,6 +258,49 @@ def save_upload(stream, length: int, dest: Path) -> Path:
     return dest
 
 
+POST_ID_RES = (
+    re.compile(r"instagram\.com/(?:[^/?#]+/)?(?:p|reels?|tv)/([A-Za-z0-9_-]+)"),
+    re.compile(r"youtube\.com/(?:watch\?(?:[^#]*&)?v=|shorts/|live/|embed/)([A-Za-z0-9_-]{6,})"),
+    re.compile(r"youtu\.be/([A-Za-z0-9_-]{6,})"),
+)
+
+
+def post_id(url: str) -> str | None:
+    """The video's ID from its link, used to name saved files and to skip repeats."""
+    for pattern in POST_ID_RES:
+        match = pattern.search(url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def folder_name(text: str) -> str:
+    name = re.sub(r'[/\\:*?"<>|\x00-\x1f]+', " ", text).strip().strip(".").strip()
+    return re.sub(r"\s+", " ", name)[:60] or "Batch"
+
+
+def batch_file_name(result: dict, fallback_id: str) -> str:
+    # Date first so the folder sorts oldest to newest; the ID in brackets finds repeats.
+    title = folder_name(result.get("title") or "") if result.get("title") else ""
+    if len(title) > 50:
+        title = title[:50].rsplit(" ", 1)[0]  # end on a whole word
+    ident = result.get("id") or fallback_id
+    published = result.get("published") or "undated"
+    return f"{published} {title} [{ident}].txt" if title else f"{published} [{ident}].txt"
+
+
+def already_saved(folder: Path, ident: str) -> Path | None:
+    return next((f for f in folder.glob("*.txt") if f.name.endswith(f"[{ident}].txt")), None)
+
+
+def rebuild_combined(folder: Path) -> Path:
+    """One file with every transcript in the folder, handy to paste into a chat model."""
+    combined = folder / f"{folder.name} - all transcripts.txt"
+    parts = [f.read_text(encoding="utf-8").strip() for f in sorted(folder.glob("*].txt"))]
+    combined.write_text(("\n\n" + "-" * 40 + "\n\n").join(parts) + "\n", encoding="utf-8")
+    return combined
+
+
 # ---------------------------------------------------------------- text
 
 TAG_RE = re.compile(r"\[[^\]]*\]|\*[^*]*\*|[♪♫]+")
@@ -425,7 +473,16 @@ def run_job(raw: str, tools: Tools, emit) -> dict:
         meta, files = fetch_audio(url, folder)
         return finish_job(files, folder, tools, emit, kind="link", site=host, title=title_of(meta),
                           creator=creator_of(meta), source=meta.get("webpage_url") or url,
-                          filename=filename_for(meta))
+                          filename=filename_for(meta), ident=meta.get("id"), published=published_on(meta))
+
+
+def published_on(meta: dict) -> str | None:
+    day = str(meta.get("upload_date") or "")
+    if re.fullmatch(r"\d{8}", day):
+        return f"{day[:4]}-{day[4:6]}-{day[6:]}"
+    if meta.get("timestamp"):
+        return dt.datetime.fromtimestamp(meta["timestamp"]).date().isoformat()  # local time, not UTC
+    return None
 
 
 def run_file_job(path: Path, name: str, tools: Tools, emit) -> dict:
@@ -436,8 +493,58 @@ def run_file_job(path: Path, name: str, tools: Tools, emit) -> dict:
                           creator="", source=name, filename=file_txt_name(name))
 
 
+def run_batch(links: list[str], label: str, tools: Tools, emit, pause: tuple[float, float] = BATCH_PAUSE) -> dict:
+    """Transcribe many links in a row and save each one, plus a combined file, into one folder."""
+    links = links[:MAX_BATCH]
+    folder = SAVE_ROOT / folder_name(label)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as err:
+        raise Failure(f"Could not create {folder}: {err.strerror}.") from None
+    total = len(links)
+    emit({"stage": "batch", "total": total, "folder": str(folder)})
+    saved = skipped = failed = login_refusals = 0
+    stopped = None
+    for index, link in enumerate(links, 1):
+        ident = post_id(link)
+        existing = already_saved(folder, ident) if ident else None
+        if existing:
+            skipped += 1
+            emit({"stage": "item", "index": index, "state": "skipped", "url": link, "title": existing.stem,
+                  "reason": "Already saved"})
+            continue
+        prefix = f"{index} of {total}"
+        try:
+            result = run_job(link, tools, lambda event: emit(
+                {**event, "stage": "progress", "index": index, "message": f"{prefix} · {event['message']}"}))
+        except Failure as err:
+            failed += 1
+            emit({"stage": "item", "index": index, "state": "failed", "url": link, "reason": str(err)})
+            login_refusals = login_refusals + 1 if "without a login" in str(err) else 0
+            if login_refusals >= 2:
+                stopped = "Instagram started asking for a login, so the batch stopped. Try again in a while."
+                break
+        else:
+            login_refusals = 0
+            name = batch_file_name(result, ident or f"video{index}")
+            try:
+                (folder / name).write_text(f"{result['header']}\n\n{result['plain']}\n", encoding="utf-8")
+            except OSError as err:
+                raise Failure(f"Could not save into {folder}: {err.strerror}. On a Mac, allow Transcript Grabber "
+                              "in System Settings > Privacy & Security > Files and Folders.") from None
+            saved += 1
+            emit({"stage": "item", "index": index, "state": "saved", "url": link, "title": result["title"] or name,
+                  "words": result["words"], "file": name})
+        if index < total:
+            time.sleep(random.uniform(*pause))
+    combined = rebuild_combined(folder) if saved or skipped else None
+    return {"stage": "batch-done", "saved": saved, "skipped": skipped, "failed": failed, "folder": str(folder),
+            "combined": combined.name if combined else None, "stopped": stopped}
+
+
 def finish_job(files: list[Path], folder: Path, tools: Tools, emit, *, kind: str, site: str,
-               title: str, creator: str, source: str, filename: str) -> dict:
+               title: str, creator: str, source: str, filename: str,
+               ident: str | None = None, published: str | None = None) -> dict:
     kinds = [stream_types(f, tools) for f in files]
     voiced = [f for f, found in zip(files, kinds) if "audio" in found]
     if not voiced:
@@ -464,6 +571,8 @@ def finish_job(files: list[Path], folder: Path, tools: Tools, emit, *, kind: str
     return {
         "stage": "done",
         "kind": kind,
+        "id": ident,
+        "published": published,
         "site": site,
         "title": title,
         "creator": creator,
@@ -525,7 +634,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.transcribe_link()
         if path == "/api/transcribe-file":
             return self.transcribe_file()
+        if path == "/api/batch":
+            return self.transcribe_batch()
         self.reply(404, b"Not found")
+
+    def transcribe_batch(self) -> None:
+        if self.headers.get_content_type() != "application/json":
+            return self.reply(415, b"Send JSON")
+        length = int(self.headers.get("Content-Length") or 0)
+        if not 0 < length <= 400_000:
+            return self.reply(400, b"Bad request")
+        try:
+            body = json.loads(self.rfile.read(length))
+            links = [str(link) for link in body.get("links") or []]
+            label = str(body.get("label") or "Batch")
+        except (ValueError, AttributeError, TypeError):
+            return self.reply(400, b"Bad request")
+        if not 0 < len(links) <= MAX_BATCH:
+            return self.reply(400, f"Send between 1 and {MAX_BATCH} links.".encode())
+        self.stream(label, lambda emit: run_batch(links, label, self.server.tools, emit))
 
     def transcribe_link(self) -> None:
         # Only JSON is accepted, so a cross-site form cannot post here and a

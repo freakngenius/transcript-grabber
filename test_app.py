@@ -288,6 +288,20 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(status, 413)
         self.assertIn(b"empty", body)
 
+    def test_batch_needs_json(self):
+        status, _ = self.request("POST", "/api/batch", self.local(**{"Content-Type": "text/plain"}), b"x")
+        self.assertEqual(status, 415)
+
+    def test_batch_needs_links(self):
+        body = json.dumps({"links": [], "label": "nasa"}).encode()
+        status, _ = self.request("POST", "/api/batch", self.local(**{"Content-Type": "application/json"}), body)
+        self.assertEqual(status, 400)
+
+    def test_batch_size_is_capped(self):
+        body = json.dumps({"links": ["https://youtu.be/x"] * (app.MAX_BATCH + 1), "label": "x"}).encode()
+        status, _ = self.request("POST", "/api/batch", self.local(**{"Content-Type": "application/json"}), body)
+        self.assertEqual(status, 400)
+
     def test_bad_link_streams_an_error(self):
         body = json.dumps({"url": "not a link"}).encode()
         headers = self.local(Origin=f"http://127.0.0.1:{self.port}", **{"Content-Type": "application/json"})
@@ -324,3 +338,90 @@ class FileJobTests(unittest.TestCase):
         events = [json.loads(line) for line in lines]
         self.assertIn("notes draft.mov", events[0]["message"])
         self.assertEqual(events[-1], {"stage": "error", "message": "That file is not a video or audio file."})
+
+
+class BatchHelperTests(unittest.TestCase):
+    def test_post_ids(self):
+        self.assertEqual(app.post_id("https://www.instagram.com/nasa/reel/DdPsDCWRT-u/"), "DdPsDCWRT-u")
+        self.assertEqual(app.post_id("https://www.instagram.com/p/BQ0eAlwhDrw/"), "BQ0eAlwhDrw")
+        self.assertEqual(app.post_id("https://www.youtube.com/watch?v=RU-i523fflU&t=3"), "RU-i523fflU")
+        self.assertEqual(app.post_id("https://youtu.be/RU-i523fflU"), "RU-i523fflU")
+        self.assertEqual(app.post_id("https://www.youtube.com/shorts/myZ9kn9MIWQ"), "myZ9kn9MIWQ")
+        self.assertIsNone(app.post_id("https://vimeo.com/1"))
+
+    def test_folder_names_are_safe(self):
+        self.assertEqual(app.folder_name("nasa"), "nasa")
+        self.assertEqual(app.folder_name("a/b:c*?"), "a b c")
+        self.assertEqual(app.folder_name("..."), "Batch")
+
+    def test_batch_file_name(self):
+        result = {"published": "2026-09-12", "title": "Today's flyover: part 1/2", "id": "DdPsDCWRT-u"}
+        self.assertEqual(app.batch_file_name(result, "x"), "2026-09-12 Today's flyover part 1 2 [DdPsDCWRT-u].txt")
+        self.assertEqual(app.batch_file_name({}, "abc"), "undated [abc].txt")
+        long = {"published": "2026-09-13", "title": "Today's flyover in Pittsburgh is just the beginning of a season", "id": "X"}
+        self.assertEqual(app.batch_file_name(long, "x"), "2026-09-13 Today's flyover in Pittsburgh is just the [X].txt")
+
+
+def fake_run_job(outcomes):
+    """A stand-in run_job: each call pops the next outcome, a result title or a Failure message."""
+    calls = []
+
+    def run_job(link, tools, emit):
+        calls.append(link)
+        emit({"stage": "fetching", "message": "Fetching audio from instagram.com…"})
+        outcome = outcomes.pop(0)
+        if outcome.startswith("FAIL:"):
+            raise app.Failure(outcome[5:])
+        ident = app.post_id(link)
+        return {"title": outcome, "id": ident, "published": "2026-09-0" + str(len(calls)), "words": 10,
+                "header": outcome, "plain": f"words of {outcome}"}
+
+    return run_job, calls
+
+
+class RunBatchTests(unittest.TestCase):
+    LOGIN = "FAIL:Instagram would not share this video without a login. It may be private."
+
+    def batch(self, links, outcomes, root):
+        run_job, calls = fake_run_job(outcomes)
+        events = []
+        with mock.patch.object(app, "run_job", run_job), mock.patch.object(app, "SAVE_ROOT", root):
+            done = app.run_batch(links, "nasa", None, events.append, pause=(0, 0))
+        return done, events, calls
+
+    def links(self, *ids):
+        return [f"https://www.instagram.com/reel/{i}/" for i in ids]
+
+    def test_saves_each_transcript_and_a_combined_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            done, events, calls = self.batch(self.links("A1", "B2"), ["First", "Second"], root)
+            folder = root / "nasa"
+            names = sorted(f.name for f in folder.iterdir())
+            combined = (folder / "nasa - all transcripts.txt").read_text()
+        self.assertEqual(names, ["2026-09-01 First [A1].txt", "2026-09-02 Second [B2].txt", "nasa - all transcripts.txt"])
+        self.assertLess(combined.index("words of First"), combined.index("words of Second"))
+        self.assertEqual((done["saved"], done["skipped"], done["failed"], done["stopped"]), (2, 0, 0, None))
+        self.assertEqual(events[0]["stage"], "batch")
+        self.assertIn("1 of 2 · Fetching audio", [e.get("message", "") for e in events if e["stage"] == "progress"][0])
+
+    def test_already_saved_posts_are_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "nasa").mkdir()
+            (root / "nasa" / "2026-01-01 Old [A1].txt").write_text("old")
+            done, events, calls = self.batch(self.links("A1", "B2"), ["Second"], root)
+        self.assertEqual(calls, self.links("B2"))
+        self.assertEqual((done["saved"], done["skipped"]), (1, 1))
+
+    def test_two_login_refusals_in_a_row_stop_the_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done, events, calls = self.batch(self.links("A1", "B2", "C3", "D4"), [self.LOGIN, self.LOGIN, "never"], Path(tmp))
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(done["failed"], 2)
+        self.assertIn("asking for a login", done["stopped"])
+
+    def test_one_failure_does_not_stop_the_batch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            done, events, calls = self.batch(self.links("A1", "B2", "C3"), ["FAIL:This post has no video.", "Two", "Three"], Path(tmp))
+        self.assertEqual((done["saved"], done["failed"], done["stopped"]), (2, 1, None))
