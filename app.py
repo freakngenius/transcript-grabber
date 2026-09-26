@@ -2,7 +2,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["yt-dlp[default]"]
 # ///
-"""IG Transcript: paste a video link, get the transcript as a text file.
+"""Transcript Grabber: paste a video link, get the transcript as a text file.
 
     uv run app.py              web app on http://127.0.0.1:3232
     uv run app.py URL [URL…]   command line; saves .txt files to ~/Downloads
@@ -38,7 +38,7 @@ LANGUAGE = os.environ.get("WHISPER_LANGUAGE", "auto")
 THREADS = str(min(8, os.cpu_count() or 4))
 MODEL_NAME = "ggml-large-v3-turbo.bin"
 MODEL_URL = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{MODEL_NAME}"
-MODEL_DIR = Path.home() / ".cache" / "ig-transcript"
+MODEL_DIR = Path.home() / ".cache" / "transcript-grabber"
 MAX_VIDEOS = 10  # a carousel post can hold several videos
 MIN_WORDS = 5
 
@@ -142,7 +142,9 @@ def download(url: str, dest: Path) -> None:
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
 BARE_INSTAGRAM_RE = re.compile(r"(?:www\.)?instagram\.com/[^\s<>\"']+")
 GENERIC_TITLE_RE = re.compile(r"^(video|post|reel) by ", re.I)
-LOGIN_HINTS = ("login", "log in", "empty media response", "rate-limit", "rate limit", "unreachable", "private")
+LOGIN_HINTS = ("login", "log in", "sign in", "empty media response", "rate-limit", "rate limit", "unreachable", "private")
+SITE_NAMES = {"instagram.com": "Instagram", "youtube.com": "YouTube", "youtu.be": "YouTube",
+              "tiktok.com": "TikTok", "x.com": "X", "twitter.com": "X", "facebook.com": "Facebook"}
 
 
 def pick_url(text: str) -> str:
@@ -162,10 +164,21 @@ def pick_url(text: str) -> str:
             raise Failure("Paste a link to one post or reel, not a profile.")
         # The igsh query tags who shared the link; keep it out of saved files.
         url = parsed._replace(query="", fragment="").geturl()
+    # A channel, playlist or search page would make yt-dlp fetch many videos.
+    if host.endswith("youtube.com") and not re.match(r"/(watch/?$|shorts/|live/|embed/|v/)", parsed.path):
+        raise Failure("Paste a link to one video, not a channel or playlist.")
     return url
 
 
-def explain(message: str) -> str:
+def site_name(url: str) -> str:
+    host = (urlparse(url).hostname or "").lower()
+    for domain, name in SITE_NAMES.items():
+        if host == domain or host.endswith("." + domain):
+            return name
+    return host.removeprefix("www.") or "The site"
+
+
+def explain(message: str, site: str = "Instagram") -> str:
     """Turn a yt-dlp error into one plain sentence."""
     lines = message.strip().splitlines()
     line = re.sub(r"^ERROR:\s*", "", lines[0] if lines else "")
@@ -175,9 +188,9 @@ def explain(message: str) -> str:
     if "unsupported url" in low:
         return "This link is not a video page the app can read."
     if any(hint in low for hint in LOGIN_HINTS):
-        return ("Instagram would not share this post without a login. It may be private or "
-                "age-restricted, or Instagram is limiting requests. Try again in a minute. "
-                "For private posts, see Cookies in the README.")
+        return (f"{site} would not share this video without a login. It may be private or "
+                f"age-restricted, or {site} is limiting requests. Try again in a minute. "
+                "For private videos, see Private posts in the README.")
     if "404" in low:
         return "This post was not found. It may have been deleted."
     if "no video" in low or "no formats" in low or "requested format is not available" in low:
@@ -327,14 +340,21 @@ def fetch_audio(url: str, folder: Path) -> tuple[dict, list[Path]]:
         "socket_timeout": 20,
         "retries": 3,
     }
-    browser = os.environ.get("IG_COOKIES_FROM_BROWSER")
+    browser = os.environ.get("COOKIES_FROM_BROWSER")
     if browser:
         options["cookiesfrombrowser"] = (browser,)
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
-    except yt_dlp.utils.DownloadError as err:
-        raise Failure(explain(str(err))) from None
+    for attempt in (1, 2):
+        try:
+            with yt_dlp.YoutubeDL(options) as ydl:
+                info = ydl.extract_info(url, download=True)
+            break
+        except yt_dlp.utils.DownloadError as err:
+            # YouTube sometimes refuses a fresh media URL with 403; a new extraction usually works.
+            if attempt == 1 and "HTTP Error 403" in str(err):
+                for leftover in folder.iterdir():
+                    leftover.unlink()
+                continue
+            raise Failure(explain(str(err), site_name(url))) from None
     if not info:
         raise Failure("No video found at that link.")
     entries = [e for e in (info.get("entries") or [info]) if e]
@@ -365,7 +385,7 @@ def run_job(raw: str, tools: Tools, emit) -> dict:
     url = pick_url(raw)
     host = (urlparse(url).hostname or "the link").removeprefix("www.")
     emit({"stage": "fetching", "message": f"Fetching audio from {host}…"})
-    with tempfile.TemporaryDirectory(prefix="ig-transcript-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="transcript-grabber-") as tmp:
         folder = Path(tmp)
         meta, files = fetch_audio(url, folder)
         voiced = [f for f in files if has_audio(f, tools)]
@@ -413,7 +433,7 @@ JOB_LOCK = threading.Lock()  # one transcription at a time; they share the GPU
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "IGTranscript/1"
+    server_version = "TranscriptGrabber/1"
 
     def log_message(self, format: str, *args) -> None:
         pass  # keep the terminal for job output
@@ -441,7 +461,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/":
             return self.reply(200, (HERE / "index.html").read_bytes(), "text/html; charset=utf-8")
         if path == "/api/ping":
-            return self.reply(200, b'{"app": "ig-transcript"}', "application/json")
+            return self.reply(200, b'{"app": "transcript-grabber"}', "application/json")
         self.reply(404, b"Not found")
 
     def do_POST(self) -> None:
@@ -507,7 +527,7 @@ class Server(ThreadingHTTPServer):
 def already_running(url: str) -> bool:
     try:
         with urllib.request.urlopen(f"{url}/api/ping", timeout=2) as resp:
-            return json.load(resp).get("app") == "ig-transcript"
+            return json.load(resp).get("app") == "transcript-grabber"
     except (OSError, ValueError):
         return False
 
@@ -523,7 +543,7 @@ def serve(port: int, tools: Tools, open_browser: bool, exit_with_stdin: bool = F
         # The Mac app holds this pipe open. When the app quits or crashes, the
         # pipe closes and the server exits with it instead of lingering.
         threading.Thread(target=lambda: (sys.stdin.read(), os._exit(0)), daemon=True).start()
-    print(f"IG Transcript is running at {url}  (Ctrl+C to stop)")
+    print(f"Transcript Grabber is running at {url}  (Ctrl+C to stop)")
     if open_browser:
         threading.Timer(0.6, webbrowser.open, [url]).start()
     try:
@@ -568,7 +588,7 @@ def main() -> int:
 
     url = f"http://127.0.0.1:{args.port}"
     if not args.urls and already_running(url):
-        print(f"IG Transcript is already running at {url}")
+        print(f"Transcript Grabber is already running at {url}")
         if not args.no_open:
             webbrowser.open(url)
         return 0

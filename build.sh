@@ -1,13 +1,13 @@
 #!/bin/zsh
-# Build IG Transcript.app and install it in /Applications (override with DEST_DIR).
+# Build Transcript Grabber.app and install it in /Applications (override with DEST_DIR).
 # Run again after editing app.py, index.html or anything in mac/.
 set -euo pipefail
 cd "${0:A:h}"
 
-APP="IG Transcript"
+APP="Transcript Grabber"
 DEST_DIR="${DEST_DIR:-/Applications}"
 # Build outside Dropbox: its extended attributes break code signatures.
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/ig-transcript-build.XXXXXX")
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/transcript-grabber-build.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 BUNDLE="$WORK/$APP.app"
 mkdir -p "$BUNDLE/Contents/MacOS" "$BUNDLE/Contents/Resources"

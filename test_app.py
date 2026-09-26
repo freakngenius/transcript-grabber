@@ -2,8 +2,13 @@
 
 import http.client
 import json
+import sys
+import tempfile
 import threading
+import types
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import app
 
@@ -73,6 +78,24 @@ class LinkTests(unittest.TestCase):
         with self.assertRaises(app.Failure):
             app.pick_url("hello")
 
+    def test_youtube_single_videos_pass(self):
+        for link in ("https://www.youtube.com/watch?v=RU-i523fflU", "https://youtu.be/RU-i523fflU",
+                     "https://www.youtube.com/shorts/myZ9kn9MIWQ", "https://m.youtube.com/watch?v=abc"):
+            self.assertEqual(app.pick_url(link), link)
+
+    def test_youtube_channels_and_playlists_rejected(self):
+        for link in ("https://www.youtube.com/@NASA", "https://www.youtube.com/@NASA/shorts",
+                     "https://www.youtube.com/playlist?list=PL1", "https://www.youtube.com/channel/UC123",
+                     "https://www.youtube.com/results?search_query=nasa"):
+            with self.assertRaises(app.Failure, msg=link):
+                app.pick_url(link)
+
+    def test_site_names(self):
+        self.assertEqual(app.site_name("https://youtu.be/x"), "YouTube")
+        self.assertEqual(app.site_name("https://m.youtube.com/watch?v=x"), "YouTube")
+        self.assertEqual(app.site_name("https://www.instagram.com/p/x/"), "Instagram")
+        self.assertEqual(app.site_name("https://vimeo.com/1"), "vimeo.com")
+
     def test_other_sites_pass_through(self):
         self.assertEqual(app.pick_url("https://www.tiktok.com/@a/video/1"), "https://www.tiktok.com/@a/video/1")
 
@@ -98,6 +121,67 @@ class MetadataTests(unittest.TestCase):
         self.assertEqual(app.explain("ERROR: Unsupported URL: https://x.test/"), "This link is not a video page the app can read.")
         self.assertIn("deleted", app.explain("ERROR: [Instagram] abc: Unable to download webpage: HTTP Error 404: Not Found"))
         self.assertTrue(app.explain("ERROR: [Instagram] abc: Something odd.").startswith("Something odd."))
+        age = "ERROR: [youtube] abc: Sign in to confirm your age. This video may be inappropriate for some users."
+        self.assertTrue(app.explain(age, "YouTube").startswith("YouTube would not share this video without a login."))
+
+
+def fake_yt_dlp(errors):
+    """A stand-in yt_dlp module: each extraction raises the next queued error, then succeeds."""
+    calls = []
+
+    class DownloadError(Exception):
+        pass
+
+    class YoutubeDL:
+        def __init__(self, options):
+            self.folder = Path(options["outtmpl"]).parent
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def extract_info(self, url, download):
+            calls.append(url)
+            if errors:
+                raise DownloadError(errors.pop(0))
+            path = self.folder / "001-abc.webm"
+            path.write_bytes(b"audio")
+            return {"id": "abc", "requested_downloads": [{"filepath": str(path)}]}
+
+    module = types.ModuleType("yt_dlp")
+    module.YoutubeDL = YoutubeDL
+    module.utils = types.SimpleNamespace(DownloadError=DownloadError)
+    return module, calls
+
+
+class FetchRetryTests(unittest.TestCase):
+    """YouTube sometimes answers a fresh media URL with 403; one new extraction usually fixes it."""
+
+    def test_403_retries_once(self):
+        module, calls = fake_yt_dlp(["ERROR: unable to download video data: HTTP Error 403: Forbidden"])
+        with mock.patch.dict(sys.modules, {"yt_dlp": module}), tempfile.TemporaryDirectory() as tmp:
+            _, files = app.fetch_audio("https://youtu.be/abc", Path(tmp))
+            names = [f.name for f in files]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(names, ["001-abc.webm"])
+
+    def test_second_403_gives_up(self):
+        forbidden = "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        module, calls = fake_yt_dlp([forbidden, forbidden])
+        with mock.patch.dict(sys.modules, {"yt_dlp": module}), tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(app.Failure):
+                app.fetch_audio("https://youtu.be/abc", Path(tmp))
+        self.assertEqual(len(calls), 2)
+
+    def test_other_errors_do_not_retry(self):
+        module, calls = fake_yt_dlp(["ERROR: [youtube] abc: Private video. Sign in if you've been granted access"])
+        with mock.patch.dict(sys.modules, {"yt_dlp": module}), tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(app.Failure) as caught:
+                app.fetch_audio("https://youtu.be/abc", Path(tmp))
+        self.assertEqual(len(calls), 1)
+        self.assertIn("YouTube would not share", str(caught.exception))
 
 
 class GuardTests(unittest.TestCase):

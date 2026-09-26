@@ -1,11 +1,12 @@
-# IG Transcript
+# Transcript Grabber
 
-A Mac app: paste an Instagram (or other yt-dlp) video link, get the transcript as a .txt file. README.md has usage.
+A Mac app: paste an Instagram or YouTube link (or any other yt-dlp link), get the transcript as a .txt file. README.md has usage.
 
 ## How it works
 - `app.py` is one uv script with a PEP 723 header, so its dependencies live in uv's cache, not in the repo. Do not add a pyproject.toml or .venv here. yt-dlp downloads the audio track only into a `TemporaryDirectory`, ffmpeg converts it to 16 kHz mono WAV, and Homebrew `whisper-cli` (whisper.cpp on Metal) transcribes it with ggml-large-v3-turbo. `/api/transcribe` streams NDJSON progress events to `index.html`. The command-line mode runs the same `run_job()`.
-- `mac/main.swift` is the whole Mac app: an AppKit window with a WKWebView. It starts `uv run --upgrade-package yt-dlp app.py --no-open --port 3232 --exit-with-stdin`, waits for `/api/ping`, then loads the page. It reuses a server that already answers the ping.
-- `build.sh` compiles the Swift file, draws the icon with `mac/make_icon.swift`, bundles copies of `app.py` and `index.html`, signs ad hoc, and installs to /Applications. Edits to those files reach the app only after `./build.sh`.
+- `mac/main.swift` is the whole Mac app: an AppKit window with a WKWebView. It starts `uv run --upgrade-package yt-dlp app.py --no-open --port 3232 --exit-with-stdin`, waits for `/api/ping` to answer `transcript-grabber`, then loads the page. It reuses a server that already answers the ping.
+- `build.sh` compiles the Swift file, draws the icon with `mac/make_icon.swift`, bundles copies of `app.py` and `index.html`, signs ad hoc, and installs `Transcript Grabber.app` to /Applications. Edits to those files reach the app only after `./build.sh`.
+- Names that must agree: the app and bundle name `Transcript Grabber`, bundle ID `local.transcriptgrabber` (also the `defaults` domain), the ping ID `transcript-grabber` in app.py and main.swift, the model folder `~/.cache/transcript-grabber/`, and the log `~/Library/Logs/Transcript Grabber.log`.
 
 ## Design
 The UI follows the Kesterson Collage design system by Kyle Kesterson (Claude Design export dated 2026-09-03). Its tokens are copied into the `:root` block of index.html.
@@ -14,33 +15,39 @@ The UI follows the Kesterson Collage design system by Kyle Kesterson (Claude Des
 - Deliberate deviations: the transcript sheet never tilts or hover-tilts, because people read and select text in it. The ink band's dot texture uses paper-coloured dots at 10%, because the token's dark dots vanish on ink.
 - One deliberate exception: the ❤️ in the header byline. The system says no emoji; Kyle asked for it.
 - The status pages in `page()` in main.swift and the icon in make_icon.swift use the same palette. The window is forced to dark appearance so the title bar sits on ink.
+- Page copy names both Instagram and YouTube. Numbers in it come from real runs (see below).
 
 ## Non-negotiables
 - The server binds to 127.0.0.1 only. Every request passes `Handler.allowed()`: the Host check blocks DNS rebinding and the Origin check blocks other sites. POST accepts only `application/json`, so cross-site forms fail. `GuardTests` covers this; it fails when the guard is removed.
 - The server must not outlive the app. The app holds the server's stdin pipe, and `--exit-with-stdin` exits when that pipe closes, so a crash or `pkill` cannot orphan it.
 - The native `save` and `copy` message handlers answer only pages from 127.0.0.1. Saving goes through NSSavePanel, which grants file access without a Downloads permission prompt.
+- One video per job. `pick_url()` refuses Instagram profiles and YouTube channel, playlist and search pages, which would make yt-dlp fetch many videos. `noplaylist` handles `watch?v=…&list=…`.
 - Media never persists. Everything stays inside the job's temp folder.
-- Errors the user sees are `Failure` messages in plain English. Raw yt-dlp errors go through `explain()`.
+- Errors the user sees are `Failure` messages in plain English. Raw yt-dlp errors go through `explain()`, which names the site from `site_name()`.
 - No silent empties: zero words is an error, and fewer than 5 words shows a notice.
 - Instagram links lose their query string (`igsh` tags who shared the link), in `pick_url()` and in `pickUrl()` in index.html.
 - Build outside cloud-synced folders (build.sh uses a temp folder): Dropbox's extended attributes break code signatures.
 
 ## Seams that bite
+- Command Line Tools are enough to build; full Xcode is not needed (checked with `DEVELOPER_DIR=/Library/Developer/CommandLineTools`).
 - The Swift file compiles with `-parse-as-library` because of `@main`, and with `-swift-version 5`. Top-level code there is not main-actor isolated.
 - Without the Edit menu, Command-V never reaches the web view. Keep Cut, Copy, Paste and Select All in `buildMenu()`.
-- Apps opened from Finder get a short PATH. The app prepends /opt/homebrew/bin, and `need()` in app.py also checks Homebrew folders.
+- Apps opened from Finder get a short PATH. The app prepends /opt/homebrew/bin, and `need()` in app.py also checks Homebrew folders. yt-dlp finds deno on that PATH for YouTube.
 - uv exits 2 when PyPI is unreachable; only then does the app retry with `--offline`.
+- YouTube sometimes answers a fresh media URL with HTTP 403. `fetch_audio()` clears the temp folder and extracts once more; `FetchRetryTests` covers it with a stand-in yt_dlp module.
 
-## Decisions with evidence (2026-09-26)
+## Decisions with evidence (2026-09-26, M5 Max)
 - Mac app, not a hosted URL: whisper.cpp runs free on the Mac's GPU, and Instagram serves logged-out requests from a home connection but tends to block cloud servers.
 - No VAD. On real NASA reels, Silero VAD dropped a sentence spoken over crowd noise, invented a line on a music-only reel, and lost casing and punctuation. `-sns` without VAD gave the best output.
 - Public reels work logged out with yt-dlp 2026.08.19, and reels expose an audio-only DASH stream, so `bestaudio` downloads about 1 MB per minute. Old reels can report `has_audio: false`; those fail with the no-sound message.
-- The model is cloned (`cp -c`) into `~/.cache/ig-transcript/` from any copy Spotlight finds, else downloaded from Hugging Face. `WHISPER_MODEL` overrides it.
-- macOS 26 shows the drawn squircle icon as is (no gray backing plate). Checked with `NSWorkspace.icon(forFile:)`, for both the first icon and the Collage one.
+- YouTube works with the same pipeline: a 3m11s NASA video gave 403 words in 8 to 14 seconds end to end, and a 29m59s one gave 5,310 words in 34 seconds. It also worked with deno off the PATH. One Short failed once with 403 and downloaded fine on the next try, hence the retry.
+- Whisper transcribes YouTube too; YouTube's own captions are not used, so every site gets the same quality and code path.
+- The model is cloned (`cp -c`) into `~/.cache/transcript-grabber/` from any copy Spotlight finds, else downloaded from Hugging Face. `WHISPER_MODEL` overrides it.
+- macOS 26 shows the drawn squircle icon as is (no gray backing plate). Checked with `NSWorkspace.icon(forFile:)`.
 
 ## Verify
 - `python3 -B -m unittest -v` must exit 0. Capture exit codes explicitly, not through a pipe.
-- `./build.sh` must exit 0, then `codesign --verify --deep --strict "/Applications/IG Transcript.app"`.
-- End to end: open the app, then in a browser at http://127.0.0.1:3232 paste https://www.instagram.com/nasa/reel/DdPsDCWRT-u/ and expect about 95 words.
+- `./build.sh` must exit 0, then `codesign --verify --deep --strict "/Applications/Transcript Grabber.app"`.
+- End to end: open the app, then in a browser at http://127.0.0.1:3232 paste https://www.instagram.com/nasa/reel/DdPsDCWRT-u/ (about 95 words) and https://www.youtube.com/watch?v=RU-i523fflU (about 400 words).
 - Server lifetime: `( sleep 5 ) | uv run app.py --no-open --port 3299 --exit-with-stdin` must stop answering `/api/ping` once the pipe closes.
-- `.claude/launch.json` has an `ig-transcript` config on port 3232 for the browser-only mode.
+- `.claude/launch.json` has a `transcript-grabber` config on port 3232 and `transcript-grabber-dev` on 3233.

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IG Transcript</title>
+<title>Transcript Grabber</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23141214'/%3E%3Crect x='6' y='9' width='20' height='14' fill='%23ECBF42'/%3E%3Cpath d='M10 13h12M10 16h12M10 19h7' stroke='%23141214' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -258,19 +258,19 @@
 <header class="band-ink">
   <div class="frame">
     <div class="brand">
-      <p class="wordmark">IG Transcript</p>
+      <p class="wordmark">Transcript Grabber</p>
       <!-- The emoji breaks the design system's no-emoji rule on purpose: Kyle asked for it. -->
       <p class="byline">Made with ❤️ by <a href="https://www.demystified.ai" target="_blank" rel="noopener">Kyle Kesterson</a></p>
     </div>
-    <p class="eyebrow">Reel to text</p>
+    <p class="eyebrow">Video to text</p>
     <h1>What did they actually say?</h1>
-    <p class="lead">Paste an Instagram link and get what was said as text. A one-minute reel takes about 5 seconds.</p>
+    <p class="lead">Paste an Instagram or YouTube link and get what was said as text. A one-minute reel takes about 5 seconds, a 30-minute video about 35.</p>
     <form id="form">
       <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
-             placeholder="https://www.instagram.com/reel/…" aria-label="Video link" autofocus>
+             placeholder="Paste an Instagram or YouTube link" aria-label="Video link" autofocus>
       <button id="go" class="btn btn-solid btn-tall" type="submit">Get transcript</button>
     </form>
-    <p class="hint">Paste or drop a link and it starts on its own · TikTok, YouTube and X links work too</p>
+    <p class="hint">Paste or drop a link and it starts on its own · reels, Shorts and full YouTube videos · TikTok and X work too</p>
   </div>
 </header>
 
@@ -318,7 +318,7 @@
         <div class="principle" data-tilt="-1.2">
           <div class="top"><span class="num">01</span><span class="aside">yt-dlp</span></div>
           <h3>Sound only</h3>
-          <p>Only the audio track comes down, about 1 MB for a minute of reel. The video never does.</p>
+          <p>Only the audio track comes down, about 1 MB a minute. The video never does.</p>
         </div>
         <div class="principle" data-tilt="0.9" data-shadow="accent">
           <div class="top"><span class="num">02</span><span class="aside">whisper.cpp</span></div>

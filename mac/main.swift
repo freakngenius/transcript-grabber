@@ -1,4 +1,4 @@
-// IG Transcript: a native window around the local transcription server (app.py).
+// Transcript Grabber: a native window around the local transcription server (app.py).
 // The app starts the server with uv, shows its page in a web view, and stops the
 // server when the app quits.
 
@@ -6,12 +6,12 @@ import AppKit
 import UniformTypeIdentifiers
 import WebKit
 
-private let appName = "IG Transcript"
+private let appName = "Transcript Grabber"
 private let port = 3232
 private let homeURL = URL(string: "http://127.0.0.1:\(port)/")!
 private let pingURL = URL(string: "http://127.0.0.1:\(port)/api/ping")!
 private let logURL = FileManager.default.homeDirectoryForCurrentUser
-    .appendingPathComponent("Library/Logs/IG Transcript.log")
+    .appendingPathComponent("Library/Logs/Transcript Grabber.log")
 
 private func escapeHTML(_ text: String) -> String {
     text.replacingOccurrences(of: "&", with: "&amp;")
@@ -75,7 +75,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:" + (environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         environment["PYTHONUNBUFFERED"] = "1"
         if let browser = UserDefaults.standard.string(forKey: "CookiesFromBrowser"), !browser.isEmpty {
-            environment["IG_COOKIES_FROM_BROWSER"] = browser
+            environment["COOKIES_FROM_BROWSER"] = browser
         }
         process.environment = environment
 
@@ -137,7 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         request.timeoutInterval = 1
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
-        return String(decoding: data, as: UTF8.self).contains("ig-transcript")
+        return String(decoding: data, as: UTF8.self).contains("transcript-grabber")
     }
 
     private func findTool(_ name: String) -> String? {
@@ -212,7 +212,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         button { margin-top: 24px; font: 700 11px/1 "Work Sans", sans-serif; letter-spacing: .1em; text-transform: uppercase; border: 0; border-radius: 0; padding: 15px 26px; background: #ECBF42; color: #141214; box-shadow: 4px 4px 0 #B7422D; cursor: pointer; }
         button:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 #B7422D; }
         @media (prefers-reduced-motion: reduce) { .progress span { animation: none; width: 100%; } }
-        </style></head><body><div class="box"><p class="eyebrow">IG Transcript</p><h1>\(escapeHTML(title))</h1>\(body)</div>
+        </style></head><body><div class="box"><p class="eyebrow">Transcript Grabber</p><h1>\(escapeHTML(title))</h1>\(body)</div>
         <script>function setDetail(text) { var el = document.getElementById('detail'); if (el) el.textContent = text; }</script>
         </body></html>
         """

@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ig-transcript",
+      "name": "transcript-grabber",
       "runtimeExecutable": "uv",
       "runtimeArgs": [
         "run",
@@ -13,7 +13,7 @@
       "port": 3232
     },
     {
-      "name": "ig-transcript-dev",
+      "name": "transcript-grabber-dev",
       "runtimeExecutable": "uv",
       "runtimeArgs": [
         "run",
