@@ -4,6 +4,8 @@ Paste an Instagram or YouTube link and get what was said, as a text file. Everyt
 
 Made with ❤️ by [Kyle Kesterson](https://www.demystified.ai). MIT licensed: use it, change it, make your own.
 
+Want to learn how to build apps like this, or AI agents? Join the [Demystified AI Build Lab](https://www.skool.com/demystified-ai-build-room-5414) on Skool. Free live builds every week.
+
 ## Install
 
 You need an Apple Silicon Mac and [Homebrew](https://brew.sh). Homebrew installs Apple's Command Line Tools, which is all the build needs; full Xcode is not required.
