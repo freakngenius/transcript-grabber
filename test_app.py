@@ -1,7 +1,10 @@
 """Unit tests. Standard library only: python3 -m unittest -v"""
 
 import http.client
+import io
 import json
+import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -184,6 +187,40 @@ class FetchRetryTests(unittest.TestCase):
         self.assertIn("YouTube would not share", str(caught.exception))
 
 
+class FileTests(unittest.TestCase):
+    def test_txt_name_keeps_unicode_and_drops_paths(self):
+        self.assertEqual(app.file_txt_name("Entrevista año.mov"), "Entrevista-año.txt")
+        self.assertEqual(app.file_txt_name("../../etc/passwd"), "passwd.txt")
+        self.assertEqual(app.file_txt_name("clip.MOV"), "clip.txt")
+        self.assertEqual(app.file_txt_name(""), "transcript.txt")
+
+    def test_local_file_detection(self):
+        with tempfile.NamedTemporaryFile(suffix=".mov") as handle:
+            self.assertEqual(app.local_file(handle.name), Path(handle.name))
+        self.assertIsNone(app.local_file("https://youtu.be/abc"))
+        self.assertIsNone(app.local_file("/no/such/file.mov"))
+
+    def test_upload_is_saved_in_full(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dest = app.save_upload(io.BytesIO(b"x" * 3_000_000), 3_000_000, Path(tmp) / "upload.mov")
+            self.assertEqual(dest.stat().st_size, 3_000_000)
+
+    def test_short_upload_fails(self):
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(app.Failure):
+            app.save_upload(io.BytesIO(b"abc"), 10, Path(tmp) / "upload.mov")
+
+    def test_empty_upload_fails(self):
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(app.Failure):
+            app.save_upload(io.BytesIO(b""), 0, Path(tmp) / "upload.mov")
+
+    def test_oversized_upload_refused_before_reading(self):
+        stream = io.BytesIO(b"abc")
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(app, "MAX_UPLOAD", 2):
+            with self.assertRaises(app.Failure):
+                app.save_upload(stream, 3, Path(tmp) / "upload.mov")
+        self.assertEqual(stream.tell(), 0)
+
+
 class GuardTests(unittest.TestCase):
     """The server spends compute and fetches URLs, so other sites must not reach it."""
 
@@ -237,6 +274,20 @@ class GuardTests(unittest.TestCase):
         status, _ = self.request("POST", "/api/transcribe", self.local(**{"Content-Type": "application/x-www-form-urlencoded"}), body)
         self.assertEqual(status, 415)
 
+    def test_file_upload_needs_octet_stream(self):
+        status, _ = self.request("POST", "/api/transcribe-file", self.local(**{"Content-Type": "application/json"}), b"{}")
+        self.assertEqual(status, 415)
+
+    def test_cross_site_file_upload_blocked(self):
+        headers = self.local(Origin="https://attacker.example", **{"Content-Type": "application/octet-stream"})
+        status, _ = self.request("POST", "/api/transcribe-file", headers, b"data")
+        self.assertEqual(status, 403)
+
+    def test_empty_file_upload_refused(self):
+        status, body = self.request("POST", "/api/transcribe-file", self.local(**{"Content-Type": "application/octet-stream"}), b"")
+        self.assertEqual(status, 413)
+        self.assertIn(b"empty", body)
+
     def test_bad_link_streams_an_error(self):
         body = json.dumps({"url": "not a link"}).encode()
         headers = self.local(Origin=f"http://127.0.0.1:{self.port}", **{"Content-Type": "application/json"})
@@ -248,3 +299,28 @@ class GuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("ffprobe") or os.path.exists("/opt/homebrew/bin/ffprobe"), "needs ffprobe")
+class FileJobTests(unittest.TestCase):
+    def test_non_media_upload_is_explained(self):
+        tools = app.Tools(ffmpeg=app.need("ffmpeg", ""), ffprobe=app.need("ffprobe", ""),
+                          whisper="/usr/bin/false", model=Path("/dev/null"))
+        server = app.Server(0, tools)
+        port = server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", port, timeout=20)
+            conn.request("POST", "/api/transcribe-file", body=b"this is not a video", headers={
+                "Host": f"127.0.0.1:{port}",
+                "Content-Type": "application/octet-stream",
+                "X-Filename": "notes%20draft.mov",
+            })
+            lines = conn.getresponse().read().decode().strip().splitlines()
+            conn.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+        events = [json.loads(line) for line in lines]
+        self.assertIn("notes draft.mov", events[0]["message"])
+        self.assertEqual(events[-1], {"stage": "error", "message": "That file is not a video or audio file."})

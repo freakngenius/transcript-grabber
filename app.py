@@ -2,10 +2,10 @@
 # requires-python = ">=3.11"
 # dependencies = ["yt-dlp[default]"]
 # ///
-"""Transcript Grabber: paste a video link, get the transcript as a text file.
+"""Transcript Grabber: paste a video link or drop a video file, get the transcript as a text file.
 
     uv run app.py              web app on http://127.0.0.1:3232
-    uv run app.py URL [URL…]   command line; saves .txt files to ~/Downloads
+    uv run app.py URL|FILE …   command line; saves .txt files to ~/Downloads
 
 yt-dlp downloads the audio track only, into a temp folder. whisper.cpp
 transcribes it on this Mac. The temp folder is deleted when the job ends.
@@ -30,7 +30,7 @@ import webbrowser
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_PORT = int(os.environ.get("PORT", "3232"))
@@ -40,6 +40,7 @@ MODEL_NAME = "ggml-large-v3-turbo.bin"
 MODEL_URL = f"https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{MODEL_NAME}"
 MODEL_DIR = Path.home() / ".cache" / "transcript-grabber"
 MAX_VIDEOS = 10  # a carousel post can hold several videos
+MAX_UPLOAD = 10 * 1024**3  # 10 GB per dropped file
 MIN_WORDS = 5
 
 LANGUAGES = {
@@ -220,6 +221,38 @@ def filename_for(meta: dict) -> str:
     return f"{stem[:80] or 'transcript'}.txt"
 
 
+def local_file(arg: str) -> Path | None:
+    """The command line takes files as well as links."""
+    if "://" in arg:
+        return None
+    path = Path(arg).expanduser()
+    return path if path.is_file() else None
+
+
+def file_txt_name(name: str) -> str:
+    stem = re.sub(r"[^\w-]+", "-", Path(name).stem).strip("-")
+    return f"{stem[:80] or 'transcript'}.txt"
+
+
+def save_upload(stream, length: int, dest: Path) -> Path:
+    """Copy a dropped file from the request body to disk in 1 MB chunks."""
+    if length <= 0:
+        raise Failure("That file is empty.")
+    if length > MAX_UPLOAD:
+        raise Failure(f"That file is over {MAX_UPLOAD // 1024**3} GB.")
+    if shutil.disk_usage(dest.parent).free < length + 1024**3:
+        raise Failure("There is not enough free disk space to read that file.")
+    remaining = length
+    with open(dest, "wb") as out:
+        while remaining:
+            chunk = stream.read(min(1 << 20, remaining))
+            if not chunk:
+                raise Failure("The file stopped arriving before it was complete.")
+            out.write(chunk)
+            remaining -= len(chunk)
+    return dest
+
+
 # ---------------------------------------------------------------- text
 
 TAG_RE = re.compile(r"\[[^\]]*\]|\*[^*]*\*|[♪♫]+")
@@ -314,8 +347,9 @@ def probe(path: Path, tools: Tools, *args: str) -> str:
     return proc.stdout.strip()
 
 
-def has_audio(path: Path, tools: Tools) -> bool:
-    return bool(probe(path, tools, "-select_streams", "a", "-show_entries", "stream=index"))
+def stream_types(path: Path, tools: Tools) -> set[str]:
+    """The kinds of stream in a file, like {"video", "audio"}; empty if ffmpeg cannot read it."""
+    return set(probe(path, tools, "-show_entries", "stream=codec_type").split())
 
 
 def audio_seconds(path: Path, tools: Tools) -> float:
@@ -382,45 +416,64 @@ def transcribe(audio: Path, base: Path, tools: Tools) -> tuple[list[dict], str]:
 
 
 def run_job(raw: str, tools: Tools, emit) -> dict:
+    """Transcribe a link: yt-dlp fetches the audio, then finish_job() takes over."""
     url = pick_url(raw)
     host = (urlparse(url).hostname or "the link").removeprefix("www.")
     emit({"stage": "fetching", "message": f"Fetching audio from {host}…"})
     with tempfile.TemporaryDirectory(prefix="transcript-grabber-") as tmp:
         folder = Path(tmp)
         meta, files = fetch_audio(url, folder)
-        voiced = [f for f in files if has_audio(f, tools)]
-        if not voiced:
-            raise Failure("This video has no sound, so there is nothing to transcribe.")
-        seconds = sum(audio_seconds(f, tools) for f in voiced)
-        emit({"stage": "transcribing", "message": f"Transcribing {fmt_duration(seconds)} of audio…"})
-        parts, language = [], ""
-        for n, f in enumerate(files, 1):
-            if f in voiced:
-                segments, detected = transcribe(f, folder / f"{n:03d}", tools)
-                parts.append(segments)
-                language = language or detected
-            else:
-                parts.append([])
+        return finish_job(files, folder, tools, emit, kind="link", site=host, title=title_of(meta),
+                          creator=creator_of(meta), source=meta.get("webpage_url") or url,
+                          filename=filename_for(meta))
+
+
+def run_file_job(path: Path, name: str, tools: Tools, emit) -> dict:
+    """Transcribe a video or audio file already on this Mac. The file itself is never changed."""
+    emit({"stage": "reading", "message": f"Reading {name}…"})
+    with tempfile.TemporaryDirectory(prefix="transcript-grabber-") as tmp:
+        return finish_job([path], Path(tmp), tools, emit, kind="file", site="Local file", title=Path(name).stem,
+                          creator="", source=name, filename=file_txt_name(name))
+
+
+def finish_job(files: list[Path], folder: Path, tools: Tools, emit, *, kind: str, site: str,
+               title: str, creator: str, source: str, filename: str) -> dict:
+    kinds = [stream_types(f, tools) for f in files]
+    voiced = [f for f, found in zip(files, kinds) if "audio" in found]
+    if not voiced:
+        if not any(kinds):
+            raise Failure("That file is not a video or audio file.")
+        raise Failure("This video has no sound, so there is nothing to transcribe.")
+    seconds = sum(audio_seconds(f, tools) for f in voiced)
+    emit({"stage": "transcribing", "message": f"Transcribing {fmt_duration(seconds)} of audio…"})
+    parts, language = [], ""
+    for n, f in enumerate(files, 1):
+        if f in voiced:
+            segments, detected = transcribe(f, folder / f"{n:03d}", tools)
+            parts.append(segments)
+            language = language or detected
+        else:
+            parts.append([])
 
     words = sum(len(seg["text"].split()) for part in parts for seg in part)
     if words == 0:
         raise Failure("No speech found. This video may be music only.")
     language = LANGUAGES.get(language, language)
-    title, creator = title_of(meta), creator_of(meta)
-    source = meta.get("webpage_url") or url
     facts = [fmt_duration(seconds), language, f"transcribed {dt.date.today().isoformat()}"]
     header = "\n".join(line for line in (title, creator, source, " · ".join(f for f in facts if f)) if line)
     return {
         "stage": "done",
+        "kind": kind,
+        "site": site,
         "title": title,
         "creator": creator,
-        "url": source,
+        "source": source,
         "seconds": seconds,
         "duration_label": fmt_duration(seconds),
         "language": language,
         "words": words,
         "notice": "Very little speech found. This video may be mostly music." if words < MIN_WORDS else None,
-        "filename": filename_for(meta),
+        "filename": filename,
         "header": header,
         "plain": compose(parts, plain_text),
         "timed": compose(parts, timed_text),
@@ -467,8 +520,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if not self.allowed():
             return self.reply(403, b"Forbidden")
-        if urlparse(self.path).path != "/api/transcribe":
-            return self.reply(404, b"Not found")
+        path = urlparse(self.path).path
+        if path == "/api/transcribe":
+            return self.transcribe_link()
+        if path == "/api/transcribe-file":
+            return self.transcribe_file()
+        self.reply(404, b"Not found")
+
+    def transcribe_link(self) -> None:
         # Only JSON is accepted, so a cross-site form cannot post here and a
         # cross-site fetch needs a CORS preflight that this server never grants.
         if self.headers.get_content_type() != "application/json":
@@ -480,7 +539,27 @@ class Handler(BaseHTTPRequestHandler):
             url = str(json.loads(self.rfile.read(length)).get("url") or "")
         except (ValueError, AttributeError):
             return self.reply(400, b"Bad request")
+        self.stream(url, lambda emit: run_job(url, self.server.tools, emit))
 
+    def transcribe_file(self) -> None:
+        # The raw file is the body. Forms cannot send application/octet-stream, and a
+        # cross-site fetch with it needs a CORS preflight, so other sites cannot upload.
+        if self.headers.get_content_type() != "application/octet-stream":
+            return self.reply(415, b"Send the file as application/octet-stream")
+        length = int(self.headers.get("Content-Length") or 0)
+        # Only the base name is kept, so a crafted name cannot point anywhere else.
+        name = Path(unquote(self.headers.get("X-Filename") or "")).name or "video"
+        suffix = re.sub(r"[^.a-z0-9]", "", Path(name).suffix.lower())[:8]
+        with tempfile.TemporaryDirectory(prefix="transcript-grabber-upload-") as tmp:
+            try:
+                upload = save_upload(self.rfile, length, Path(tmp) / f"upload{suffix}")
+            except Failure as err:
+                self.close_connection = True  # do not read a body that was refused
+                return self.reply(413, str(err).encode())
+            self.stream(name, lambda emit: run_file_job(upload, name, self.server.tools, emit))
+
+    def stream(self, label: str, job) -> None:
+        """Answer with NDJSON progress events while job(emit) runs, one job at a time."""
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
@@ -493,16 +572,16 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             if not JOB_LOCK.acquire(blocking=False):
-                emit({"stage": "waiting", "message": "Waiting for the previous link to finish…"})
+                emit({"stage": "waiting", "message": "Waiting for the previous one to finish…"})
                 JOB_LOCK.acquire()
             try:
-                emit(run_job(url, self.server.tools, emit))
+                emit(job(emit))
             finally:
                 JOB_LOCK.release()
         except (BrokenPipeError, ConnectionResetError):
             pass  # the page was closed mid-job
         except Failure as err:
-            print(f"{url}\n  {err}", file=sys.stderr)
+            print(f"{label}\n  {err}", file=sys.stderr)
             self.try_emit(emit, {"stage": "error", "message": str(err)})
         except Exception as err:
             traceback.print_exc()
@@ -557,11 +636,13 @@ def serve(port: int, tools: Tools, open_browser: bool, exit_with_stdin: bool = F
 
 # ---------------------------------------------------------------- command line
 
-def cli(urls: list[str], tools: Tools, out_dir: Path) -> int:
+def cli(items: list[str], tools: Tools, out_dir: Path) -> int:
     failures = 0
-    for raw in urls:
+    for raw in items:
+        say = lambda event: print(event["message"], file=sys.stderr)  # noqa: E731
+        path = local_file(raw)
         try:
-            result = run_job(raw, tools, lambda event: print(event["message"], file=sys.stderr))
+            result = run_file_job(path, path.name, tools, say) if path else run_job(raw, tools, say)
         except Failure as err:
             print(f"{raw}\n  {err}", file=sys.stderr)
             failures += 1
@@ -577,8 +658,8 @@ def cli(urls: list[str], tools: Tools, out_dir: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Paste a video link, get the transcript as text.")
-    parser.add_argument("urls", nargs="*", help="links to transcribe from the command line")
+    parser = argparse.ArgumentParser(description="Paste a video link or drop a video file, get the transcript as text.")
+    parser.add_argument("urls", nargs="*", help="links or video files to transcribe from the command line")
     parser.add_argument("--out", type=Path, default=Path.home() / "Downloads",
                         help="folder for .txt files in command-line mode (default: ~/Downloads)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)

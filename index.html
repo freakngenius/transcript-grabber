@@ -97,6 +97,8 @@
   input[type="url"]::placeholder { color: var(--k-text-paper-faint); }
   input[type="url"]:focus { box-shadow: 4px 4px 0 var(--k-yellow); }
   .hint { font-size: 13px; line-height: 1.5; color: var(--k-text-muted); margin: 16px 0 0; }
+  .alt { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 18px; max-width: 860px; }
+  .alt .hint { flex: 1; min-width: 220px; margin: 0; }
 
   /* ---------- buttons ---------- */
   .btn {
@@ -119,6 +121,9 @@
   .btn-outline { color: var(--k-ink); background: transparent; border: 2px solid var(--k-ink); padding: 13px 24px; }
   .btn-outline:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--k-ink); }
   .btn-outline:active { transform: translate(1px, 1px) scale(.985); box-shadow: 1px 1px 0 var(--k-ink); }
+  .btn-ghost { color: var(--k-yellow); background: transparent; border: 2px solid var(--k-yellow); padding: 13px 24px; }
+  .btn-ghost:hover { transform: translate(-2px, -2px); box-shadow: 4px 4px 0 var(--k-yellow); }
+  .btn-ghost:active { transform: translate(1px, 1px) scale(.985); box-shadow: 1px 1px 0 var(--k-yellow); }
   .btn-tall { min-height: 52px; }
   .btn-compact { min-height: 40px; padding: 10px 18px; }
   .btn-outline.btn-compact { padding: 8px 16px; }
@@ -228,6 +233,24 @@
   .principle p { font-size: 17px; line-height: 1.55; color: var(--k-text-paper-soft); margin: 0; }
   .principle:nth-child(2) p { color: var(--k-text-yellow); }
 
+  /* Drop target, shown only while files are dragged over the window. */
+  .dropzone {
+    position: fixed;
+    inset: 14px;
+    z-index: 50;
+    display: none;
+    align-content: center;
+    gap: 12px;
+    padding: 0 clamp(22px, 5vw, 80px);
+    background: rgba(20, 18, 20, .92);
+    border: 3px solid var(--k-yellow);
+    box-shadow: 8px 8px 0 var(--k-accent);
+    pointer-events: none;
+  }
+  body.dragging .dropzone { display: grid; }
+  .dropzone p { font: 700 clamp(38px, 5vw, 64px)/1 var(--k-display); letter-spacing: -.03em; color: var(--k-paper); margin: 0; }
+  .dropzone span { font-size: 15px; color: var(--k-text-secondary); }
+
   footer { margin-top: 72px; font-size: 13px; color: var(--k-text-paper-faint); }
 
   /* Scroll-style reveal for a fresh result; the chip overshoots as it settles. */
@@ -255,6 +278,8 @@
 </style>
 </head>
 <body>
+<div class="dropzone" aria-hidden="true"><p>Drop to transcribe</p><span>Video or audio file · it stays on this Mac</span></div>
+
 <header class="band-ink">
   <div class="frame">
     <div class="brand">
@@ -264,13 +289,17 @@
     </div>
     <p class="eyebrow">Video to text</p>
     <h1>What did they actually say?</h1>
-    <p class="lead">Paste an Instagram or YouTube link and get what was said as text. A one-minute reel takes about 5 seconds, a 30-minute video about 35.</p>
+    <p class="lead">Paste an Instagram or YouTube link, or drop in a video file, and get what was said as text. A one-minute reel takes about 5 seconds, a 30-minute video about 35.</p>
     <form id="form">
       <input id="url" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false"
              placeholder="Paste an Instagram or YouTube link" aria-label="Video link" autofocus>
       <button id="go" class="btn btn-solid btn-tall" type="submit">Get transcript</button>
     </form>
-    <p class="hint">Paste or drop a link and it starts on its own · reels, Shorts and full YouTube videos · TikTok and X work too</p>
+    <div class="alt">
+      <button id="pick" class="btn btn-ghost" type="button">Choose a video file</button>
+      <p class="hint">Or drop a .mov, .mp4 or audio file anywhere on this window · links start on their own · TikTok and X work too</p>
+    </div>
+    <input id="file" type="file" accept="video/*,audio/*,.mov,.mp4,.m4v,.mkv,.webm,.avi,.mp3,.m4a,.wav,.aac,.flac" hidden>
   </div>
 </header>
 
@@ -307,7 +336,7 @@
       </article>
       <div class="stats">
         <div class="stat"><b id="s-words"></b><span>Words in this transcript.</span></div>
-        <div class="stat"><b id="s-length"></b><span>Of audio fetched. The video never downloaded.</span></div>
+        <div class="stat"><b id="s-length"></b><span id="s-length-label">Of audio fetched. The video never downloaded.</span></div>
         <div class="stat"><b id="s-took"></b><span>From paste to text, on this Mac.</span></div>
       </div>
     </section>
@@ -318,7 +347,7 @@
         <div class="principle" data-tilt="-1.2">
           <div class="top"><span class="num">01</span><span class="aside">yt-dlp</span></div>
           <h3>Sound only</h3>
-          <p>Only the audio track comes down, about 1 MB a minute. The video never does.</p>
+          <p>For links, only the audio track comes down, about 1 MB a minute. Dropped files never leave this Mac.</p>
         </div>
         <div class="principle" data-tilt="0.9" data-shadow="accent">
           <div class="top"><span class="num">02</span><span class="aside">whisper.cpp</span></div>
@@ -328,7 +357,7 @@
         <div class="principle" data-tilt="-0.6">
           <div class="top"><span class="num">03</span><span class="aside">temp folder</span></div>
           <h3>Nothing kept</h3>
-          <p>The audio is deleted when each job ends. The text stays only if you save it.</p>
+          <p>Temp copies are deleted when each job ends, and your original file is never changed. The text stays only if you save it.</p>
         </div>
       </div>
     </section>
@@ -375,7 +404,10 @@
     $('error').hidden = false;
   }
 
-  async function start(raw) {
+  const MEDIA = /\.(mov|mp4|m4v|mkv|webm|avi|mp3|m4a|wav|aac|flac|ogg|opus)$/i;
+  const MAX_FILE = 10 * 1024 ** 3;  // same limit as MAX_UPLOAD in app.py
+
+  function startLink(raw) {
     if (busy) return;
     const url = pickUrl(raw);
     if (!url) {
@@ -383,11 +415,39 @@
       return;
     }
     urlBox.value = url;
+    run('Starting…', () => fetch('/api/transcribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    }));
+  }
+
+  function startFile(file) {
+    if (busy) return;
+    if (!/^(video|audio)\//.test(file.type) && !MEDIA.test(file.name)) {
+      showError(`${file.name} is not a video or audio file.`);
+      return;
+    }
+    if (file.size > MAX_FILE) {
+      showError(`${file.name} is over 10 GB.`);
+      return;
+    }
+    urlBox.value = '';
+    // The raw file goes to the server on this Mac; it never leaves the machine.
+    run(`Reading ${file.name}…`, () => fetch('/api/transcribe-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) },
+      body: file,
+    }));
+  }
+
+  async function run(label, send) {
     busy = true;
     $('go').disabled = true;
+    $('pick').disabled = true;
     $('error').hidden = true;
     $('result').hidden = true;
-    $('status-text').textContent = 'Starting…';
+    $('status-text').textContent = label;
     $('elapsed').textContent = '';
     $('status').hidden = false;
     began = Date.now();
@@ -395,12 +455,11 @@
 
     let finished = false;
     try {
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const res = await send();
+      if (!res.ok || !res.body) {
+        showError((await res.text()).trim() || `The app answered with error ${res.status}.`);
+        return;
+      }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
@@ -422,6 +481,7 @@
       busy = false;
       clearInterval(clock);
       $('go').disabled = false;
+      $('pick').disabled = false;
       $('status').hidden = true;
       urlBox.focus();
       urlBox.select();
@@ -443,14 +503,16 @@
 
   function showResult(result) {
     current = result;
-    const host = (() => { try { return new URL(result.url).hostname.replace(/^www\./, ''); } catch { return ''; } })();
-    $('chip').textContent = result.creator || host || 'Transcript';
+    $('chip').textContent = result.creator || result.site || 'Transcript';
     $('r-title').textContent = result.title || result.creator || 'Transcript';
-    $('r-meta').textContent = [result.language, host].filter(Boolean).join(' · ');
+    $('r-meta').textContent = [result.language, result.creator ? result.site : ''].filter(Boolean).join(' · ');
     $('notice').textContent = result.notice || '';
     $('notice').hidden = !result.notice;
     $('s-words').textContent = String(result.words);
     $('s-length').textContent = result.duration_label;
+    $('s-length-label').textContent = result.kind === 'file'
+      ? 'Of audio in this file.'
+      : 'Of audio fetched. The video never downloaded.';
     $('s-took').textContent = fmtSeconds((Date.now() - began) / 1000);
     render();
     const box = $('result');
@@ -474,14 +536,14 @@
 
   $('form').addEventListener('submit', (event) => {
     event.preventDefault();
-    start(urlBox.value);
+    startLink(urlBox.value);
   });
 
   urlBox.addEventListener('paste', (event) => {
     const url = pickUrl(event.clipboardData.getData('text'));
     if (!url) return;
     event.preventDefault();
-    start(url);
+    startLink(url);
   });
 
   // A paste anywhere on the page counts, not only in the box.
@@ -490,15 +552,44 @@
     const url = pickUrl(event.clipboardData.getData('text'));
     if (!url) return;
     event.preventDefault();
-    start(url);
+    startLink(url);
   });
 
-  // Dropping a link on the page works like pasting it.
+  // Drop a video or audio file anywhere to transcribe it; a dropped link works like a paste.
   document.addEventListener('dragover', (event) => event.preventDefault());
   document.addEventListener('drop', (event) => {
     event.preventDefault();
+    hideDropZone();
+    const file = event.dataTransfer.files && event.dataTransfer.files[0];
+    if (file) {
+      startFile(file);
+      return;
+    }
     const url = pickUrl(event.dataTransfer.getData('text/uri-list') || event.dataTransfer.getData('text/plain'));
-    if (url) start(url);
+    if (url) startLink(url);
+  });
+
+  // Show the drop target only while files are dragged over the window.
+  let dragDepth = 0;
+  const carriesFiles = (event) => Array.from(event.dataTransfer?.types || []).includes('Files');
+  document.addEventListener('dragenter', (event) => {
+    if (!carriesFiles(event)) return;
+    dragDepth += 1;
+    document.body.classList.add('dragging');
+  });
+  document.addEventListener('dragleave', (event) => {
+    if (carriesFiles(event) && --dragDepth <= 0) hideDropZone();
+  });
+  function hideDropZone() {
+    dragDepth = 0;
+    document.body.classList.remove('dragging');
+  }
+
+  $('pick').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', () => {
+    const file = $('file').files[0];
+    $('file').value = '';  // so picking the same file again still fires change
+    if (file) startFile(file);
   });
 
   $('copy').addEventListener('click', async () => {

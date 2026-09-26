@@ -1,9 +1,9 @@
 # Transcript Grabber
 
-A Mac app: paste an Instagram or YouTube link (or any other yt-dlp link), get the transcript as a .txt file. README.md has usage.
+A Mac app: paste an Instagram or YouTube link (or any other yt-dlp link), or drop a video or audio file, and get the transcript as a .txt file. README.md has usage.
 
 ## How it works
-- `app.py` is one uv script with a PEP 723 header, so its dependencies live in uv's cache, not in the repo. Do not add a pyproject.toml or .venv here. yt-dlp downloads the audio track only into a `TemporaryDirectory`, ffmpeg converts it to 16 kHz mono WAV, and Homebrew `whisper-cli` (whisper.cpp on Metal) transcribes it with ggml-large-v3-turbo. `/api/transcribe` streams NDJSON progress events to `index.html`. The command-line mode runs the same `run_job()`.
+- `app.py` is one uv script with a PEP 723 header, so its dependencies live in uv's cache, not in the repo. Do not add a pyproject.toml or .venv here. yt-dlp downloads the audio track only into a `TemporaryDirectory`, ffmpeg converts it to 16 kHz mono WAV, and Homebrew `whisper-cli` (whisper.cpp on Metal) transcribes it with ggml-large-v3-turbo. `/api/transcribe` (links) and `/api/transcribe-file` (dropped files) both stream NDJSON progress events to `index.html` through `Handler.stream()`. `run_job()` (links) and `run_file_job()` (files) both end in `finish_job()`. The command line takes links or file paths (`local_file()`).
 - `mac/main.swift` is the whole Mac app: an AppKit window with a WKWebView. It starts `uv run --upgrade-package yt-dlp app.py --no-open --port 3232 --exit-with-stdin`, waits for `/api/ping` to answer `transcript-grabber`, then loads the page. It reuses a server that already answers the ping.
 - `build.sh` compiles the Swift file, draws the icon with `mac/make_icon.swift`, bundles copies of `app.py` and `index.html`, signs ad hoc, and installs `Transcript Grabber.app` to /Applications. Edits to those files reach the app only after `./build.sh`.
 - Names that must agree: the app and bundle name `Transcript Grabber`, bundle ID `local.transcriptgrabber` (also the `defaults` domain), the ping ID `transcript-grabber` in app.py and main.swift, the model folder `~/.cache/transcript-grabber/`, and the log `~/Library/Logs/Transcript Grabber.log`.
@@ -22,7 +22,8 @@ The UI follows the Kesterson Collage design system by Kyle Kesterson (Claude Des
 - The server must not outlive the app. The app holds the server's stdin pipe, and `--exit-with-stdin` exits when that pipe closes, so a crash or `pkill` cannot orphan it.
 - The native `save` and `copy` message handlers answer only pages from 127.0.0.1. Saving goes through NSSavePanel, which grants file access without a Downloads permission prompt.
 - One video per job. `pick_url()` refuses Instagram profiles and YouTube channel, playlist and search pages, which would make yt-dlp fetch many videos. `noplaylist` handles `watch?v=…&list=…`.
-- Media never persists. Everything stays inside the job's temp folder.
+- Media never persists. Everything stays inside the job's temp folder. A dropped file arrives as the raw request body, `save_upload()` writes it into a temp folder in 1 MB chunks (10 GB cap, free-space check first), and the user's original file is never touched.
+- `/api/transcribe-file` accepts only `application/octet-stream`; like JSON, a cross-site form cannot send it and a cross-site fetch needs a preflight that never passes. Only the base name of the URL-encoded `X-Filename` header is kept, and it is used for display and the .txt name only.
 - Errors the user sees are `Failure` messages in plain English. Raw yt-dlp errors go through `explain()`, which names the site from `site_name()`.
 - No silent empties: zero words is an error, and fewer than 5 words shows a notice.
 - Instagram links lose their query string (`igsh` tags who shared the link), in `pick_url()` and in `pickUrl()` in index.html.
@@ -31,6 +32,8 @@ The UI follows the Kesterson Collage design system by Kyle Kesterson (Claude Des
 ## Seams that bite
 - Command Line Tools are enough to build; full Xcode is not needed (checked with `DEVELOPER_DIR=/Library/Developer/CommandLineTools`).
 - The Swift file compiles with `-parse-as-library` because of `@main`, and with `-swift-version 5`. Top-level code there is not main-actor isolated.
+- A WKWebView ignores `<input type="file">` unless the UI delegate implements `runOpenPanelWith`; main.swift does, with an NSOpenPanel limited to movies and audio.
+- The page must call `preventDefault()` on `dragover` and `drop`, or a WKWebView tries to open the dropped file itself.
 - Without the Edit menu, Command-V never reaches the web view. Keep Cut, Copy, Paste and Select All in `buildMenu()`.
 - Apps opened from Finder get a short PATH. The app prepends /opt/homebrew/bin, and `need()` in app.py also checks Homebrew folders. yt-dlp finds deno on that PATH for YouTube.
 - uv exits 2 when PyPI is unreachable; only then does the app retry with `--offline`.
@@ -49,5 +52,6 @@ The UI follows the Kesterson Collage design system by Kyle Kesterson (Claude Des
 - `python3 -B -m unittest -v` must exit 0. Capture exit codes explicitly, not through a pipe.
 - `./build.sh` must exit 0, then `codesign --verify --deep --strict "/Applications/Transcript Grabber.app"`.
 - End to end: open the app, then in a browser at http://127.0.0.1:3232 paste https://www.instagram.com/nasa/reel/DdPsDCWRT-u/ (about 95 words) and https://www.youtube.com/watch?v=RU-i523fflU (about 400 words).
+- Files: build a clip from whisper.cpp's public-domain JFK sample (`ffmpeg -f lavfi -i color=c=black:s=320x240:r=10 -i /opt/homebrew/share/whisper-cpp/jfk.wav -shortest -c:v libx264 -c:a aac jfk.mp4`), then `uv run app.py jfk.mp4` should print 22 words. A text file renamed to .mov must fail with "That file is not a video or audio file."
 - Server lifetime: `( sleep 5 ) | uv run app.py --no-open --port 3299 --exit-with-stdin` must stop answering `/api/ping` once the pipe closes.
 - `.claude/launch.json` has a `transcript-grabber` config on port 3232 and `transcript-grabber-dev` on 3233.

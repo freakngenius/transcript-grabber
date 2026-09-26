@@ -1,6 +1,6 @@
 # Transcript Grabber
 
-Paste an Instagram or YouTube link and get what was said, as a text file. Everything runs on your Mac: no transcription service, no account, no cost per video.
+Paste an Instagram or YouTube link, or drop in a video file, and get what was said, as a text file. Everything runs on your Mac: no transcription service, no account, no cost per video.
 
 Made with ❤️ by [Kyle Kesterson](https://www.demystified.ai). MIT licensed: use it, change it, make your own.
 
@@ -24,9 +24,12 @@ brew install uv ffmpeg whisper-cpp
 1. Open **Transcript Grabber** from Applications, Launchpad or Spotlight.
 2. Copy a link: in Instagram, tap Share, then Copy link; on YouTube, tap Share, then Copy; on the web, copy the address bar.
 3. Paste into the box, or drag a link onto the window. It starts on its own.
+   Or drop a video or audio file (.mov, .mp4, .m4a, .mp3, .wav and more) anywhere on the window, or click **Choose a video file**.
 4. Click **Copy text**, or **Save .txt…** to pick where the file goes. Turn on **Timestamps** for `[00:12]` markers.
 
 It takes Instagram reels and posts, and YouTube videos and Shorts (`youtube.com/watch`, `youtu.be` and `/shorts/` links). TikTok, X and other sites that yt-dlp supports work too. It does one video at a time, so channel, playlist and search pages are refused.
+
+Files you drop never leave your Mac. The app reads a temporary copy, deletes it when the job ends, and never changes your original. Files can be up to 10 GB.
 
 On an M5 Max, a one-minute reel takes about 5 seconds and a 30-minute YouTube video about 35. Older Macs take longer.
 
@@ -37,7 +40,7 @@ The View menu has **Open in Browser** (the same app in your browser) and **Show 
 ## How it works
 
 1. The app starts a small local server (`app.py`) with uv and shows its page in a window. The server only answers your own Mac.
-2. yt-dlp downloads only the audio track into a temp folder, about 1 MB a minute.
+2. For a link, yt-dlp downloads only the audio track into a temp folder, about 1 MB a minute. For a dropped file, the page hands the file to that local server, which saves a temporary copy.
 3. ffmpeg converts it, and whisper.cpp transcribes it with the large-v3-turbo model on the Mac's GPU. YouTube's own captions are not used.
 4. The temp folder, audio included, is deleted when the job ends. Only the text stays.
 
@@ -50,6 +53,7 @@ From the repo folder:
 ```bash
 uv run app.py                                       # web page at http://127.0.0.1:3232
 uv run app.py https://youtu.be/XXXX                 # prints the transcript, saves to ~/Downloads
+uv run app.py ~/Movies/interview.mov               # files work too
 ```
 
 | Variable | Default | What it does |
