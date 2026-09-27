@@ -25,7 +25,9 @@ brew install uv ffmpeg whisper-cpp
 2. Copy a link: in Instagram, tap Share, then Copy link; on YouTube, tap Share, then Copy; on the web, copy the address bar.
 3. Paste into the box, or drag a link onto the window. It starts on its own.
    Or drop a video or audio file (.mov, .mp4, .m4a, .mp3, .wav and more) anywhere on the window, or click **Choose a video file**.
-4. Click **Copy text**, or **Save .txt…** to pick where the file goes. Turn on **Timestamps** for `[00:12]` markers.
+4. The transcript saves itself as a .txt in `Downloads/Transcript Grabber/<creator>/` (dropped files go in `Files/`). Click **Show in Finder** to see it, **Copy text** to copy it, or **Save as…** to put a copy somewhere else. Turn on **Timestamps** for `[00:12]` markers.
+
+The first time it saves, macOS asks to let Transcript Grabber use your Downloads folder. Click Allow.
 
 It takes Instagram reels and posts, and YouTube videos and Shorts (`youtube.com/watch`, `youtu.be` and `/shorts/` links). TikTok, X and other sites that yt-dlp supports work too. It does one video at a time, so channel, playlist and search pages are refused.
 
@@ -49,7 +51,6 @@ Run it again later to pick up new videos: ones already saved are skipped. **Stop
 
 - Without a login, Instagram shows a few dozen reels before it asks you to log in. For more, use View > Instagram Login once; the app remembers it. The login is only used to scroll the Reels tab. The videos themselves are fetched without it.
 - Videos are fetched 3 to 6 seconds apart, and a run stops if Instagram starts refusing. Grabbing hundreds of videos in a row can still get an account rate-limited, so keep runs modest.
-- macOS asks once for permission to save in Downloads. Click Allow.
 
 Without the app, you can paste several post links at once instead. They are transcribed and saved the same way.
 

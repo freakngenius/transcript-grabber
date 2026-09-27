@@ -188,6 +188,7 @@
   .sheet-head { display: grid; gap: 8px; padding: 32px 28px 18px; }
   .sheet-title { font: 700 26px/1.05 var(--k-display); letter-spacing: -.02em; color: var(--k-ink); margin: 0; overflow-wrap: anywhere; }
   .sheet-meta { font-size: 13px; color: var(--k-text-paper-faint); margin: 0; }
+  .saved-line { color: var(--k-text-paper-soft); font-weight: 600; }
   .notice { background: var(--k-yellow); color: var(--k-text-yellow); border: var(--k-border); font-size: 15px; line-height: 1.5; padding: 10px 14px; margin: 6px 0 0; }
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 28px 22px; }
   .toolbar .spacer { flex: 1; }
@@ -363,6 +364,7 @@
         <div class="sheet-head">
           <h2 id="r-title" class="sheet-title"></h2>
           <p id="r-meta" class="sheet-meta"></p>
+          <p id="r-saved" class="sheet-meta saved-line" hidden></p>
           <p id="notice" class="notice" hidden></p>
         </div>
         <div class="toolbar">
@@ -370,6 +372,7 @@
           <span class="spacer"></span>
           <button id="copy" class="btn btn-outline btn-compact" type="button">Copy text</button>
           <button id="download" class="btn btn-solid btn-compact" type="button">Download .txt</button>
+          <button id="show" class="btn btn-solid btn-compact" type="button" hidden>Show in Finder</button>
         </div>
         <div class="sheet-text"><div id="text"></div></div>
       </article>
@@ -434,7 +437,9 @@
   const native = Boolean(bridge?.save);
   if (native) {
     document.documentElement.classList.add('native');
-    $('download').textContent = 'Save .txt…';
+    // Every transcript saves itself, so the save button becomes "save a copy somewhere else".
+    $('download').textContent = 'Save as…';
+    $('download').classList.replace('btn-solid', 'btn-outline');
   }
   window.igSaved = (ok) => flash($('download'), ok ? 'Saved' : 'Could not save');
 
@@ -743,8 +748,15 @@
     $('chip').textContent = result.creator || result.site || 'Transcript';
     $('r-title').textContent = result.title || result.creator || 'Transcript';
     $('r-meta').textContent = [result.language, result.creator ? result.site : ''].filter(Boolean).join(' · ');
-    $('notice').textContent = result.notice || '';
-    $('notice').hidden = !result.notice;
+    const notices = [result.notice, result.save_error].filter(Boolean).join(' ');
+    $('notice').textContent = notices;
+    $('notice').hidden = !notices;
+    if (result.saved) {
+      $('r-saved').textContent = `Saved to ${prettyPath(result.saved.slice(0, result.saved.lastIndexOf('/')))}`;
+      $('r-saved').title = result.saved;
+    }
+    $('r-saved').hidden = !result.saved;
+    $('show').hidden = !(result.saved && bridge?.reveal);
     $('s-words').textContent = String(result.words);
     $('s-length').textContent = result.duration_label;
     $('s-length-label').textContent = result.kind === 'file'
@@ -827,6 +839,10 @@
       return;
     }
     controller?.abort();
+  });
+
+  $('show').addEventListener('click', () => {
+    if (current?.saved) bridge?.reveal?.postMessage(current.saved);
   });
 
   $('reveal').addEventListener('click', () => {

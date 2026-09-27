@@ -293,6 +293,36 @@ def already_saved(folder: Path, ident: str) -> Path | None:
     return next((f for f in folder.glob("*.txt") if f.name.endswith(f"[{ident}].txt")), None)
 
 
+def write_transcript(folder: Path, result: dict, fallback_id: str) -> Path:
+    """Save one transcript. A newer copy of the same video replaces the older file."""
+    name = result.get("filename") or "transcript.txt" if result.get("kind") == "file" else batch_file_name(result, fallback_id)
+    folder.mkdir(parents=True, exist_ok=True)
+    ident = result.get("id")
+    if ident:
+        for old in folder.glob("*.txt"):
+            if old.name.endswith(f"[{ident}].txt") and old.name != name:
+                old.unlink()
+    path = folder / name
+    path.write_text(f"{result['header']}\n\n{result['plain']}\n", encoding="utf-8")
+    return path
+
+
+def autosave(result: dict) -> dict:
+    """Save a finished transcript under SAVE_ROOT without being asked, and note where."""
+    label = "Files" if result.get("kind") == "file" else (result.get("handle") or "Links")
+    folder = SAVE_ROOT / folder_name(str(label))
+    try:
+        path = write_transcript(folder, result, result.get("id") or "video")
+        if (folder / f"{folder.name} - all transcripts.txt").exists():
+            rebuild_combined(folder)  # keep a batch folder's combined file current
+    except OSError as err:
+        result["save_error"] = (f"Could not save into {folder}: {err.strerror}. On a Mac, allow Transcript Grabber "
+                                "in System Settings > Privacy & Security > Files and Folders.")
+        return result
+    result["saved"] = str(path)
+    return result
+
+
 def rebuild_combined(folder: Path) -> Path:
     """One file with every transcript in the folder, handy to paste into a chat model."""
     combined = folder / f"{folder.name} - all transcripts.txt"
@@ -473,7 +503,8 @@ def run_job(raw: str, tools: Tools, emit) -> dict:
         meta, files = fetch_audio(url, folder)
         return finish_job(files, folder, tools, emit, kind="link", site=host, title=title_of(meta),
                           creator=creator_of(meta), source=meta.get("webpage_url") or url,
-                          filename=filename_for(meta), ident=meta.get("id"), published=published_on(meta))
+                          filename=filename_for(meta), ident=meta.get("id"), published=published_on(meta),
+                          handle=meta.get("channel") or meta.get("uploader_id") or meta.get("uploader") or host)
 
 
 def published_on(meta: dict) -> str | None:
@@ -526,9 +557,8 @@ def run_batch(links: list[str], label: str, tools: Tools, emit, pause: tuple[flo
                 break
         else:
             login_refusals = 0
-            name = batch_file_name(result, ident or f"video{index}")
             try:
-                (folder / name).write_text(f"{result['header']}\n\n{result['plain']}\n", encoding="utf-8")
+                name = write_transcript(folder, result, ident or f"video{index}").name
             except OSError as err:
                 raise Failure(f"Could not save into {folder}: {err.strerror}. On a Mac, allow Transcript Grabber "
                               "in System Settings > Privacy & Security > Files and Folders.") from None
@@ -544,7 +574,7 @@ def run_batch(links: list[str], label: str, tools: Tools, emit, pause: tuple[flo
 
 def finish_job(files: list[Path], folder: Path, tools: Tools, emit, *, kind: str, site: str,
                title: str, creator: str, source: str, filename: str,
-               ident: str | None = None, published: str | None = None) -> dict:
+               ident: str | None = None, published: str | None = None, handle: str | None = None) -> dict:
     kinds = [stream_types(f, tools) for f in files]
     voiced = [f for f, found in zip(files, kinds) if "audio" in found]
     if not voiced:
@@ -573,6 +603,7 @@ def finish_job(files: list[Path], folder: Path, tools: Tools, emit, *, kind: str
         "kind": kind,
         "id": ident,
         "published": published,
+        "handle": handle,
         "site": site,
         "title": title,
         "creator": creator,
@@ -666,7 +697,7 @@ class Handler(BaseHTTPRequestHandler):
             url = str(json.loads(self.rfile.read(length)).get("url") or "")
         except (ValueError, AttributeError):
             return self.reply(400, b"Bad request")
-        self.stream(url, lambda emit: run_job(url, self.server.tools, emit))
+        self.stream(url, lambda emit: autosave(run_job(url, self.server.tools, emit)))
 
     def transcribe_file(self) -> None:
         # The raw file is the body. Forms cannot send application/octet-stream, and a
@@ -683,7 +714,7 @@ class Handler(BaseHTTPRequestHandler):
             except Failure as err:
                 self.close_connection = True  # do not read a body that was refused
                 return self.reply(413, str(err).encode())
-            self.stream(name, lambda emit: run_file_job(upload, name, self.server.tools, emit))
+            self.stream(name, lambda emit: autosave(run_file_job(upload, name, self.server.tools, emit)))
 
     def stream(self, label: str, job) -> None:
         """Answer with NDJSON progress events while job(emit) runs, one job at a time."""

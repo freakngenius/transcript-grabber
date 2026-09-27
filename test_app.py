@@ -425,3 +425,43 @@ class RunBatchTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             done, events, calls = self.batch(self.links("A1", "B2", "C3"), ["FAIL:This post has no video.", "Two", "Three"], Path(tmp))
         self.assertEqual((done["saved"], done["failed"], done["stopped"]), (2, 1, None))
+
+
+class AutosaveTests(unittest.TestCase):
+    """Single links and dropped files save themselves, like batch runs do."""
+
+    def result(self, **extra):
+        base = {"kind": "link", "title": "Flyover", "id": "A1", "published": "2026-09-13", "handle": "nasaadmin",
+                "header": "Flyover", "plain": "words", "words": 1}
+        return {**base, **extra}
+
+    def test_link_saves_into_the_creator_folder(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(app, "SAVE_ROOT", Path(tmp)):
+            result = app.autosave(self.result())
+            saved = Path(result["saved"])
+            self.assertEqual(saved.parent.name, "nasaadmin")
+            self.assertEqual(saved.name, "2026-09-13 Flyover [A1].txt")
+            self.assertEqual(saved.read_text(), "Flyover\n\nwords\n")
+
+    def test_same_video_again_replaces_the_old_file(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(app, "SAVE_ROOT", Path(tmp)):
+            app.autosave(self.result(title="Old title"))
+            result = app.autosave(self.result(title="New title"))
+            names = sorted(f.name for f in Path(result["saved"]).parent.iterdir())
+        self.assertEqual(names, ["2026-09-13 New title [A1].txt"])
+
+    def test_dropped_file_saves_into_files(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(app, "SAVE_ROOT", Path(tmp)):
+            result = app.autosave(self.result(kind="file", id=None, published=None, handle=None, title="interview",
+                                              filename="interview.txt"))
+            self.assertEqual(Path(result["saved"]).relative_to(tmp).as_posix(), "Files/interview.txt")
+
+    def test_save_failure_keeps_the_transcript(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            blocked = Path(tmp) / "blocked"
+            blocked.write_text("a file where the folder should be")
+            with mock.patch.object(app, "SAVE_ROOT", blocked):
+                result = app.autosave(self.result())
+        self.assertNotIn("saved", result)
+        self.assertIn("Could not save", result["save_error"])
+        self.assertEqual(result["plain"], "words")
